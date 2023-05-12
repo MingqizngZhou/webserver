@@ -3,34 +3,56 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <wait.h>
 #include <errno.h>
+#include <pthread.h>
 
-void recyleChild (int arg) {
+struct sockInfo {
+    int fd;  // 文件描述符
+    pthread_t tid;  // 线程号
+    struct sockaddr_in addr;
+};
+
+struct sockInfo sockInfos[128];  // 类似于线程池
+
+void* working(void* arg) {
+    // 子线程和客户端通信
+    // 输出客户端的信息
+    struct sockInfo* pinfo = (struct sockInfo *)arg;
+    char clientIP[16];
+    inet_ntop(AF_INET, &pinfo->addr.sin_addr.s_addr, clientIP, sizeof(clientIP));
+    unsigned short clientPort = ntohs(pinfo->addr.sin_port);
+    printf("client ip is %s, port is %d\n", clientIP, clientPort);
+
+    // 通信
+    char recvBuf[1024] = {0};
     while(1) {
-        int ret = waitpid(-1, NULL, WNOHANG);
-        if (ret == -1) {
-            // 所有子进程都被回收
+        // 获取客户端的数据
+        int num = read(pinfo->fd, recvBuf, sizeof(recvBuf));
+        if(num == -1) {
+            perror("read");
+            exit(-1);
+        } else if(num > 0) {
+
+
+            printf("recv client data : %s\n", recvBuf);
+        } else if(num == 0) {
+            printf("clinet closed...\n");
             break;
-        } else if (ret == 0) {
-            // 还有子进程活着
-            break;
-        } else {
-            // 子进程被回收
-            printf("子进程 %d 被回收了\n", ret);
-        }
+        } else ;
+
+        // char * data = "hello,i am server";
+        char* data = recvBuf;
+        // 给客户端发送数据
+        write(pinfo->fd, data, strlen(data));
+
     }
+    // 关闭子进程通信的文件描述符
+    close(pinfo->fd);
+    // exit(0);
+    return NULL;
 }
 
 int main() {
-    struct sigaction act;
-    act.sa_flags = 0;
-    sigemptyset(&act.sa_mask);
-    act.sa_handler = recyleChild;
-    // 注册信号捕捉
-    sigaction(SIGCHLD, &act, NULL);
-
     // 1.创建socket(用于监听的套接字)
     int lfd = socket(PF_INET, SOCK_STREAM, 0);
     if(lfd == -1) {
@@ -57,62 +79,43 @@ int main() {
         exit(-1);
     }
 
+    // 初始化
+    int max = sizeof(sockInfos) / sizeof(sockInfos[0]);
+    for(int i = 0; i < max; ++ i) {
+        bzero(&sockInfos[i], sizeof(sockInfos[i]));
+        sockInfos[i].fd = -1;
+        sockInfos[i].tid = -1;
+    }
     // 4.不断接收客户端连接
     while (1) {
         struct sockaddr_in clientaddr;
         int len = sizeof(clientaddr);
         int cfd = accept(lfd, (struct sockaddr *)&clientaddr, &len);
         if(cfd == -1) {
-            if (errno == EINTR) {
-                // 信号软中断连接以后没有连接被接收到
-                // 需要单独进行处理，不然程序会直接按照连接错误的方式退出
-                continue;
-            }
             perror("accept");
             exit(-1);
         }
 
-        // 每一个连接进来，创建一个子进程与客户端进行通信
-        pid_t pid = fork();
-        if(pid == 0) {
-            // 子进程
-            char clientIp[16];
-            // 输出客户端的信息
-            char clientIP[16];
-            inet_ntop(AF_INET, &clientaddr.sin_addr.s_addr, clientIP, sizeof(clientIP));
-            unsigned short clientPort = ntohs(clientaddr.sin_port);
-            printf("client ip is %s, port is %d\n", clientIP, clientPort);
-
-            // 5.通信
-            char recvBuf[1024] = {0};
-            while(1) {
-                // 获取客户端的数据
-                int num = read(cfd, recvBuf, sizeof(recvBuf));
-                if(num == -1) {
-                    perror("read");
-                    exit(-1);
-                } else if(num > 0) {
-
-
-                    printf("recv client data : %s\n", recvBuf);
-                } else if(num == 0) {
-                    printf("clinet closed...\n");
-                    break;
-                }
-
-                // char * data = "hello,i am server";
-                char* data = recvBuf;
-                // 给客户端发送数据
-                write(cfd, data, strlen(data));
-
+        struct sockInfo * pinfo;
+        for (int i = 0; i < max; ++ i) {
+            if(sockInfos[i].fd == -1) {
+                pinfo = &sockInfos[i];
+                break;
             }
-            // 关闭子进程通信的文件描述符
-            close(cfd);
-            exit(0);
+            if (i == max - 1) {
+                sleep(1);
+                i --;
+            }
         }
+
+        pinfo->fd = cfd;
+        memcpy(&pinfo->addr, &clientaddr, len);
+        // 每一个连接进来，创建一个线程与客户端进行通信
+        pthread_create(&pinfo->tid, NULL, working, pinfo);
+
+        pthread_detach(pinfo->tid);  // join是阻塞的
     }
-   
-    // 关闭监听的文件描述符
+
     close(lfd);
 
     return 0;

@@ -1,5 +1,8 @@
 # Webserver
 
+> simple multi-pthread server
+通过线程池 + 多线程的方式实现并发连接
+
 > simple multi-process server
 通过父子进程实现服务器的并发连接。
 
