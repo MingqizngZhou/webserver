@@ -1,6 +1,9 @@
 # Webserver
 
-> simple multi-pthread server
+> simple multi-thread server v1.0
+增加端口复用
+
+> simple multi-thread server
 通过线程池 + 多线程的方式实现并发连接
 
 > simple multi-process server

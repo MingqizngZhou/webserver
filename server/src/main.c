@@ -59,7 +59,9 @@ int main() {
         perror("socket");
         exit(-1);
     }
-
+    // 设置端口复用
+    int optval = 1;
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
     // 2.绑定
     struct sockaddr_in saddr;
     saddr.sin_family = AF_INET;
