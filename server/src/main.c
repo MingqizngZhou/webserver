@@ -4,53 +4,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <pthread.h>
-
-struct sockInfo {
-    int fd;  // 文件描述符
-    pthread_t tid;  // 线程号
-    struct sockaddr_in addr;
-};
-
-struct sockInfo sockInfos[128];  // 类似于线程池
-
-void* working(void* arg) {
-    // 子线程和客户端通信
-    // 输出客户端的信息
-    struct sockInfo* pinfo = (struct sockInfo *)arg;
-    char clientIP[16];
-    inet_ntop(AF_INET, &pinfo->addr.sin_addr.s_addr, clientIP, sizeof(clientIP));
-    unsigned short clientPort = ntohs(pinfo->addr.sin_port);
-    printf("client ip is %s, port is %d\n", clientIP, clientPort);
-
-    // 通信
-    char recvBuf[1024] = {0};
-    while(1) {
-        // 获取客户端的数据
-        int num = read(pinfo->fd, recvBuf, sizeof(recvBuf));
-        if(num == -1) {
-            perror("read");
-            exit(-1);
-        } else if(num > 0) {
-
-
-            printf("recv client data : %s\n", recvBuf);
-        } else if(num == 0) {
-            printf("clinet closed...\n");
-            break;
-        } else ;
-
-        // char * data = "hello,i am server";
-        char* data = recvBuf;
-        // 给客户端发送数据
-        write(pinfo->fd, data, strlen(data));
-
-    }
-    // 关闭子进程通信的文件描述符
-    close(pinfo->fd);
-    // exit(0);
-    return NULL;
-}
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/select.h>
 
 int main() {
     // 1.创建socket(用于监听的套接字)
@@ -81,41 +38,63 @@ int main() {
         exit(-1);
     }
 
-    // 初始化
-    int max = sizeof(sockInfos) / sizeof(sockInfos[0]);
-    for(int i = 0; i < max; ++ i) {
-        bzero(&sockInfos[i], sizeof(sockInfos[i]));
-        sockInfos[i].fd = -1;
-        sockInfos[i].tid = -1;
-    }
-    // 4.不断接收客户端连接
+    // 创建一个fd_id的文件描述符集合
+    fd_set rdset, tmp;  // tem交给内核操作，读操作与写操作分离
+    FD_ZERO(&rdset);
+    FD_SET(lfd, &rdset);
+    int maxfd = lfd;
+
     while (1) {
-        struct sockaddr_in clientaddr;
-        int len = sizeof(clientaddr);
-        int cfd = accept(lfd, (struct sockaddr *)&clientaddr, &len);
-        if(cfd == -1) {
-            perror("accept");
+        tmp = rdset;
+
+        // 调用select系统函数，让内核帮忙检测哪些文件描述符有数据
+        int ret = select(maxfd + 1, &tmp, NULL, NULL, NULL);
+        if (ret == -1) {
+            perror("select");
             exit(-1);
-        }
+        } else if (ret == 0) {
+            continue;
+        } else if (ret > 0) {
+            // 文件描述符的对应的缓冲区的数据发生了变化
+            if (FD_ISSET(lfd, &tmp)) {
+                // 表示有新的客户端连接进来
+                struct sockaddr_in client_addr;
+                int len = sizeof(client_addr);
+                int cfd = accept(lfd, (struct sockaddr*)&client_addr, &len);
 
-        struct sockInfo * pinfo;
-        for (int i = 0; i < max; ++ i) {
-            if(sockInfos[i].fd == -1) {
-                pinfo = &sockInfos[i];
-                break;
+                // 输出客户端的信息
+                char clientIP[16];
+                inet_ntop(AF_INET, &client_addr.sin_addr.s_addr, clientIP, sizeof(clientIP));
+                unsigned short clientPort = ntohs(client_addr.sin_port);
+                printf("client ip is %s, port is %d\n", clientIP, clientPort);
+
+
+                // 将新的文件描述符加入到集合中
+                FD_SET(cfd, &rdset);
+
+                // 更新最大的文件描述符
+                maxfd = maxfd > cfd ? maxfd : cfd;
             }
-            if (i == max - 1) {
-                sleep(1);
-                i --;
+
+            for (int i = lfd + 1; i <= maxfd; ++ i) {
+                if (FD_ISSET(i, &tmp)) {
+                    // 说明这个文件描述符对应的客户端发来了数据
+                    char buf[1024];
+                    int len = read(i, buf, sizeof buf);
+                    if (len == -1) {
+                        perror("read");
+                        exit(-1);
+                    } else if (len == 0) {
+                        printf("client closed...\n");
+                        close(i);
+                        FD_CLR(i, &rdset);
+                    } else if (len > 0) {
+                        printf("recv client data : %s\n", buf);
+                        write(i, buf, strlen(buf));
+                    }
+                }
             }
-        }
-
-        pinfo->fd = cfd;
-        memcpy(&pinfo->addr, &clientaddr, len);
-        // 每一个连接进来，创建一个线程与客户端进行通信
-        pthread_create(&pinfo->tid, NULL, working, pinfo);
-
-        pthread_detach(pinfo->tid);  // join是阻塞的
+        } else ;
     }
 
     close(lfd);
