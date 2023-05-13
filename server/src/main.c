@@ -4,10 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/select.h>
+#include <poll.h>
+
+#define MAX_CONCURRENCY 1024
 
 int main() {
     // 1.创建socket(用于监听的套接字)
@@ -19,6 +18,7 @@ int main() {
     // 设置端口复用
     int optval = 1;
     setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+
     // 2.绑定
     struct sockaddr_in saddr;
     saddr.sin_family = AF_INET;
@@ -38,25 +38,27 @@ int main() {
         exit(-1);
     }
 
-    // 创建一个fd_id的文件描述符集合
-    fd_set rdset, tmp;  // tem交给内核操作，读操作与写操作分离
-    FD_ZERO(&rdset);
-    FD_SET(lfd, &rdset);
-    int maxfd = lfd;
+    // 初始化检测为文件描述符数组
+    struct pollfd fds[MAX_CONCURRENCY]; // 设置最大并发量是1024
+    for (int i = 0; i < MAX_CONCURRENCY; ++ i) {
+        fds[i].fd = -1;
+        fds[i].events = POLLIN;
+    }
+
+    fds[0].fd = lfd;  // fds[0]用作监听位置
+    int nfds = 0;
 
     while (1) {
-        tmp = rdset;
-
-        // 调用select系统函数，让内核帮忙检测哪些文件描述符有数据
-        int ret = select(maxfd + 1, &tmp, NULL, NULL, NULL);
+        // 调用poll系统函数，让内核帮忙检测哪些文件描述符有数据
+        int ret = poll(fds, nfds + 1, -1);  // -1设置阻塞，当检测到需要检测的文件描述符有变化，解除阻塞
         if (ret == -1) {
-            perror("select");
+            perror("poll");
             exit(-1);
         } else if (ret == 0) {
             continue;
         } else if (ret > 0) {
             // 文件描述符的对应的缓冲区的数据发生了变化
-            if (FD_ISSET(lfd, &tmp)) {
+            if (fds[0].revents & POLLIN) {  // 内核返回的参数可能为 POLLIN | POLLOUT
                 // 表示有新的客户端连接进来
                 struct sockaddr_in client_addr;
                 int len = sizeof(client_addr);
@@ -70,27 +72,33 @@ int main() {
 
 
                 // 将新的文件描述符加入到集合中
-                FD_SET(cfd, &rdset);
+                for (int i = 1; i < MAX_CONCURRENCY; ++ i) {
+                    if (fds[i].fd == -1) {
+                        fds[i].fd = cfd;
+                        fds[i].events = POLLIN;
+                        break;
+                    }
+                }
 
-                // 更新最大的文件描述符
-                maxfd = maxfd > cfd ? maxfd : cfd;
+                // 更新最大的文件描述符索引
+                nfds = nfds > cfd ? nfds : cfd;
             }
 
-            for (int i = lfd + 1; i <= maxfd; ++ i) {
-                if (FD_ISSET(i, &tmp)) {
+            for (int i = 1; i <= nfds; ++ i) {
+                if (fds[i].revents & POLLIN) {
                     // 说明这个文件描述符对应的客户端发来了数据
-                    char buf[1024];
-                    int len = read(i, buf, sizeof buf);
+                    char buf[1024] = {0};
+                    int len = read(fds[i].fd, buf, sizeof buf);
                     if (len == -1) {
                         perror("read");
                         exit(-1);
                     } else if (len == 0) {
                         printf("client closed...\n");
-                        close(i);
-                        FD_CLR(i, &rdset);
+                        close(fds[i].fd);
+                        fds[i].fd = -1;;
                     } else if (len > 0) {
                         printf("recv client data : %s\n", buf);
-                        write(i, buf, strlen(buf));
+                        write(fds[i].fd, buf, strlen(buf));
                     }
                 }
             }
