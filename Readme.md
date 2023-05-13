@@ -1,5 +1,8 @@
 # Webserver
 
+> epoll
+使用I/O多路复用中的epoll实现服务器并发(默认LT模式)
+
 > poll
 使用I/O多路复用中的poll实现服务器并发
 

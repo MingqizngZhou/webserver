@@ -3,10 +3,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <poll.h>
+#include <sys/epoll.h>
 
-#define MAX_CONCURRENCY 1024
+#define MAX_EPOLLEVENTS 1024
 
 int main() {
     // 1.创建socket(用于监听的套接字)
@@ -38,28 +37,29 @@ int main() {
         exit(-1);
     }
 
-    // 初始化检测为文件描述符数组
-    struct pollfd fds[MAX_CONCURRENCY]; // 设置最大并发量是1024
-    for (int i = 0; i < MAX_CONCURRENCY; ++ i) {
-        fds[i].fd = -1;
-        fds[i].events = POLLIN;
-    }
+    // 调用epoll_create()创建一个epoll实例
+    int epfd = epoll_create(1);
 
-    fds[0].fd = lfd;  // fds[0]用作监听位置
-    int nfds = 0;
+    // 将监听的文件描述符相关的检测信息加到实例中
+    struct epoll_event epev;
+    epev.events = EPOLLIN | EPOLLOUT;
+    epev.data.fd = lfd;
+    epoll_ctl(epfd, EPOLL_CTL_ADD, lfd, &epev);
+
+    struct epoll_event epevs[MAX_EPOLLEVENTS];  // 传出参数，保存了发送了变化的文件描述符的信息
 
     while (1) {
-        // 调用poll系统函数，让内核帮忙检测哪些文件描述符有数据
-        int ret = poll(fds, nfds + 1, -1);  // -1设置阻塞，当检测到需要检测的文件描述符有变化，解除阻塞
+        int ret = epoll_wait(epfd, epevs, MAX_EPOLLEVENTS, -1);  // 阻塞
         if (ret == -1) {
-            perror("poll");
+            perror("epoll_wait");
             exit(-1);
-        } else if (ret == 0) {
-            continue;
-        } else if (ret > 0) {
-            // 文件描述符的对应的缓冲区的数据发生了变化
-            if (fds[0].revents & POLLIN) {  // 内核返回的参数可能为 POLLIN | POLLOUT
-                // 表示有新的客户端连接进来
+        } 
+        printf("ret = %d\n", ret);
+
+        for (int i = 0; i < ret; ++ i) {
+            int curFd = epevs[i].data.fd;
+            if (curFd == lfd) {
+                // 监听的文件描述符有数据到达--有客户端到达
                 struct sockaddr_in client_addr;
                 int len = sizeof(client_addr);
                 int cfd = accept(lfd, (struct sockaddr*)&client_addr, &len);
@@ -70,42 +70,30 @@ int main() {
                 unsigned short clientPort = ntohs(client_addr.sin_port);
                 printf("client ip is %s, port is %d\n", clientIP, clientPort);
 
-
-                // 将新的文件描述符加入到集合中
-                for (int i = 1; i < MAX_CONCURRENCY; ++ i) {
-                    if (fds[i].fd == -1) {
-                        fds[i].fd = cfd;
-                        fds[i].events = POLLIN;
-                        break;
-                    }
-                }
-
-                // 更新最大的文件描述符索引
-                nfds = nfds > cfd ? nfds : cfd;
-            }
-
-            for (int i = 1; i <= nfds; ++ i) {
-                if (fds[i].revents & POLLIN) {
-                    // 说明这个文件描述符对应的客户端发来了数据
-                    char buf[1024] = {0};
-                    int len = read(fds[i].fd, buf, sizeof buf);
-                    if (len == -1) {
-                        perror("read");
-                        exit(-1);
-                    } else if (len == 0) {
-                        printf("client closed...\n");
-                        close(fds[i].fd);
-                        fds[i].fd = -1;;
-                    } else if (len > 0) {
-                        printf("recv client data : %s\n", buf);
-                        write(fds[i].fd, buf, strlen(buf));
-                    }
+                epev.events = EPOLLIN;
+                epev.data.fd = cfd;
+                epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &epev);
+            } else {
+                if (epevs[i].events & EPOLLOUT) continue;
+                // 有数据到达，需要通信
+                char buf[1024] = {0};
+                int len = read(curFd, buf, sizeof buf);
+                if (len == -1) {
+                    perror("read");
+                    exit(-1);
+                } else if (len == 0) {
+                    printf("client closed...\n");
+                    epoll_ctl(epfd, EPOLL_CTL_DEL, curFd, NULL);
+                    close(curFd);
+                } else if (len > 0) {
+                    printf("recv client data : %s\n", buf);
+                    write(curFd, buf, strlen(buf));
                 }
             }
-        } else ;
+        }
     }
-
     close(lfd);
+    close(epfd);
 
     return 0;
 }

@@ -29,14 +29,15 @@ int main() {
     char recvBuf[1024] = {0};
     int num1 = 0, num2 = 0;
     while(1) {
-        scanf("%d %d", &num1, &num2);
+        // scanf("%d %d", &num1, &num2);
         sprintf(recvBuf, "data1 : %d, data2 : %d \n", num1, num2);
+        num1 ++, num2 ++;
 
         // char * data = "hello,i am client";
         // 给服务端发送数据
         write(fd, recvBuf , sizeof recvBuf);
 
-        // sleep(1);
+        usleep(1000);
         
         int len = read(fd, recvBuf, sizeof(recvBuf));
         if(len == -1) {
