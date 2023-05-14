@@ -26,25 +26,24 @@ int main() {
 
     
     // 3. 通信
-    char recvBuf[1024] = {0};
-    int num1 = 0, num2 = 0;
+    char sendBuf[1024] = {0};
+
     while(1) {
-        // scanf("%d %d", &num1, &num2);
-        sprintf(recvBuf, "data1 : %d, data2 : %d \n", num1, num2);
-        num1 ++, num2 ++;
+        fgets(sendBuf, sizeof(sendBuf), stdin);
+        // printf("sendData = %s\n", sendBuf);
 
         // char * data = "hello,i am client";
         // 给服务端发送数据
-        write(fd, recvBuf , sizeof recvBuf);
-
-        usleep(1000);
+        // 这样发过去是不包含最后的结束符，因此在接收端需要特殊处理，或者使用sizeof 或者 strlen(sendBuf) + 1
+        // write(fd, sendBuf , strlen(sendBuf));
+        write(fd, sendBuf , strlen(sendBuf));
         
-        int len = read(fd, recvBuf, sizeof(recvBuf));
+        int len = read(fd, sendBuf, sizeof(sendBuf));
         if(len == -1) {
             perror("read");
             exit(-1);
         } else if(len > 0) {
-            printf("recv server data : %s\n", recvBuf);
+            printf("recv server data : %s\n", sendBuf);
         } else if(len == 0) {
             // 表示服务器端断开连接
             printf("server closed...\n");

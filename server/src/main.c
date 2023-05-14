@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #define MAX_EPOLLEVENTS 1024
 
@@ -54,15 +56,22 @@ int main() {
             perror("epoll_wait");
             exit(-1);
         } 
-        printf("ret = %d\n", ret);
+        // printf("ret = %d\n", ret);
 
         for (int i = 0; i < ret; ++ i) {
             int curFd = epevs[i].data.fd;
+
             if (curFd == lfd) {
                 // 监听的文件描述符有数据到达--有客户端到达
                 struct sockaddr_in client_addr;
                 int len = sizeof(client_addr);
                 int cfd = accept(lfd, (struct sockaddr*)&client_addr, &len);
+
+                // 设置cfd属性非阻塞
+                int flag = fcntl(cfd, F_GETFL);
+                flag |= O_NONBLOCK;
+                fcntl(cfd, F_SETFL, flag);
+
 
                 // 输出客户端的信息
                 char clientIP[16];
@@ -70,24 +79,35 @@ int main() {
                 unsigned short clientPort = ntohs(client_addr.sin_port);
                 printf("client ip is %s, port is %d\n", clientIP, clientPort);
 
-                epev.events = EPOLLIN;
+                epev.events = EPOLLIN | EPOLLET; // 设置边沿触发
                 epev.data.fd = cfd;
                 epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &epev);
             } else {
                 if (epevs[i].events & EPOLLOUT) continue;
-                // 有数据到达，需要通信
-                char buf[1024] = {0};
-                int len = read(curFd, buf, sizeof buf);
-                if (len == -1) {
-                    perror("read");
-                    exit(-1);
-                } else if (len == 0) {
+
+                // 循环读取所有数据
+                char buf[5] = {0};
+                int len = 0;
+                while ((len = read(curFd, buf, sizeof(buf))) > 0) {
+                    // 打印
+                    // printf("recvData = %s\n", buf);
+                    write(STDIN_FILENO, buf, len); // 直接写到终端
+                    write(curFd, buf, len);
+                    // 清空一下缓存
+                    memset(buf, 0, sizeof buf);
+                }
+                if (len == 0) {
                     printf("client closed...\n");
-                    epoll_ctl(epfd, EPOLL_CTL_DEL, curFd, NULL);
-                    close(curFd);
-                } else if (len > 0) {
-                    printf("recv client data : %s\n", buf);
-                    write(curFd, buf, strlen(buf));
+                } else if (len == -1) {
+                    if (errno == EAGAIN) {
+                        // 如果文件缓冲区里面的数据恰好在上一轮读完，这个时候去读就会产生这个错误
+                        // printf("data over"); 
+                        continue;
+                    }
+                    else {
+                        perror("read");
+                        exit(-1);
+                    }
                 }
             }
         }
