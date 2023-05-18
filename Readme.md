@@ -1,5 +1,8 @@
 # Webserver
 
+> webserver v1.0
+使用单Reactor多线程的模式
+
 > epoll_ET
 使用I/O多路复用中的epoll实现服务器并发(ET模式)
 
