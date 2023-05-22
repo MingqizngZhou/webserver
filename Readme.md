@@ -1,5 +1,8 @@
 # Webserver
 
+> webserver v2.0
+增加日志和移除长时间不通信的用户
+
 > webserver v1.0
 使用单Reactor多线程的模式
 
