@@ -3,6 +3,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <time.h>
 #include "locker.h"
 #include "lst_timer.h"
 #include "http_conn.h"
@@ -19,6 +20,9 @@ typedef enum{                       // 日志等级，越往下等级越高
 }E_LOGLEVEL;
 
 void EM_log(const int level, const char* fun, const int line, const char *fmt, ...);
+
+// 格式化输出当前的时间
+void getTime(char timeBuf[]);
 
 #define EMlog(level, fmt...) EM_log(level, __FUNCTION__, __LINE__, fmt) // 宏定义，隐藏形参
 

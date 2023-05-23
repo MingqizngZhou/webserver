@@ -2,6 +2,10 @@
 [toc]
 
 ## 版本信息
+
+> webserver v3.0
+将带有时间戳的日志信息输出到文本文件中
+
 > webserver v2.0
 增加日志和移除长时间不通信的用户，增加Makefile
 
