@@ -177,6 +177,8 @@ http_conn::HTTP_CODE http_conn::process_read(){
 
         // 获取一行数据
         text = get_line();
+        LOG_INFO("%s", text);
+        Log::get_instance()->flush();
         m_line_start = m_checked_idx;           // 更新下一行的起始位置
 
         // EMlog(LOGLEVEL_DEBUG, ">>>>>> %s\n", text);
@@ -291,7 +293,7 @@ http_conn::HTTP_CODE http_conn::parse_request_headers(char* text){      // 在�
     } else {
         #ifdef COUT_OPEN
             // EMlog(LOGLEVEL_DEBUG,"oop! unknow header: %s\n", text );
-            LOG_DEBUG("oop! unknow header: %s", text);
+            LOG_INFO("oop! unknow header: %s", text);
             Log::get_instance()->flush();
         #endif   
     }
@@ -344,7 +346,7 @@ http_conn::LINE_STATUS http_conn::parse_one_line(){
 // 如果目标文件存在、对所有用户可读，且不是目录，则使用mmap将其
 // 映射到内存地址m_file_address处，并告诉调用者获取文件成功
 http_conn::HTTP_CODE http_conn::do_request(){
-    // "/home/cyf/Linux/webserver/resources"
+    // "/home/zmq/Webserver/webserver/resources"
     strcpy( m_real_file, doc_root );
     int len = strlen( doc_root );
     strncpy( m_real_file + len, m_url, FILENAME_LEN - len - 1 );    
@@ -438,9 +440,7 @@ bool http_conn::write(){
             }
         }
     }
-    
-    printf("write done.\n");
-    return true;
+    // printf("write done.\n");
 }
 
 // 往写缓冲中写入待发送的数据
@@ -456,6 +456,8 @@ bool http_conn::add_response( const char* format, ... ) {
     }
     m_write_idx += len;                     // 更新下次写数据的起始位置
     va_end( arg_list );
+    LOG_INFO("request:%s", m_write_buf);
+    Log::get_instance()->flush();
     return true;
 }
 
@@ -561,6 +563,7 @@ bool http_conn::process_write(HTTP_CODE ret){
     m_iv[ 0 ].iov_base = m_write_buf;
     m_iv[ 0 ].iov_len = m_write_idx;
     m_iv_count = 1;
+    bytes_to_send = m_write_idx;
     return true;
 }
 

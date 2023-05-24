@@ -226,6 +226,8 @@ int main(int argc, char* argv[]){
                 Log::get_instance()->flush(); 
                 if (!users[sock_fd].write()){       // 主进程一次性写完所有数据
                     users[sock_fd].conn_close();    // 写入失败
+                    LOG_ERROR("-------WRITE FAILED--------\n");
+                    Log::get_instance()->flush(); 
                     http_conn::m_timer_lst.del_timer(users[sock_fd].timer);  // 移除其对应的定时器   
                 }
             }
