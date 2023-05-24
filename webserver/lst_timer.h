@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include "http_conn.h"
 #include "locker.h"
+#include "log.h"
 
 class http_conn;   // 前向声明
 

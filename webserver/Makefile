@@ -12,3 +12,7 @@ http_conn.o : http_conn.cpp
 
 log.o : log.cpp
 	g++ -c log.cpp
+
+# .PHONY:clean
+clean:
+	rm -f *.o main

@@ -1,12 +1,12 @@
 #ifndef _EM_LOG_H_      // 多个文件引用时，不能重复定义
 #define _EM_LOG_H_
 
+#include <iostream>
 #include <stdarg.h>
 #include <stdio.h>
-#include <time.h>
-#include "locker.h"
-#include "lst_timer.h"
-#include "http_conn.h"
+#include <string>
+#include <pthread.h>
+#include "block_queue.h"
 
 #define OPEN_LOG 1                  // 声明是否打开日志输出
 #define LOG_LEVEL LOGLEVEL_INFO     // 声明当前程序的日志等级状态，只输出等级等于或高于该值的内容
@@ -19,11 +19,67 @@ typedef enum{                       // 日志等级，越往下等级越高
     LOGLEVEL_ERROR,
 }E_LOGLEVEL;
 
-void EM_log(const int level, const char* fun, const int line, const char *fmt, ...);
+class Log {
+public:
+    //C++11以后,使用局部变量懒汉不用加锁
+    static Log *get_instance() {
+        static Log instance;
+        return &instance;
+    }
 
-// 格式化输出当前的时间
-void getTime(char timeBuf[]);
+    static void *flush_log_thread(void *args) {
+        Log::get_instance()->async_write_log(nullptr);
+        return args;
+    }
 
-#define EMlog(level, fmt...) EM_log(level, __FUNCTION__, __LINE__, fmt) // 宏定义，隐藏形参
+    //可选择的参数有日志文件、日志缓冲区大小、最大行数以及最长日志条队列
+    bool init(const char *file_name, int close_log, int log_buf_size = 8192, int split_lines = 5000000, int max_queue_size = 0);
+    
+    void write_log(int level, const char *format, ...);
+
+    void flush(void);
+
+private:
+    Log();
+    virtual ~Log();
+    void *async_write_log(void* arg)
+    {
+        std::string single_log;
+        //从阻塞队列中取出一个日志string，写入文件
+        while (m_log_queue->pop(single_log))
+        {
+            m_mutex.lock();
+            fputs(single_log.c_str(), m_fp);
+            m_mutex.unlock();
+        }
+        return arg;
+    }
+
+private:
+    char dir_name[128]; //路径名
+    char log_name[128]; //log文件名
+    int m_split_lines;  //日志最大行数
+    int m_log_buf_size; //日志缓冲区大小
+    long long m_count;  //日志行数记录
+    int m_today;        //因为按天分类,记录当前时间是那一天
+    FILE *m_fp;         //打开log的文件指针
+    char *m_buf;
+    block_queue<std::string> *m_log_queue; //阻塞队列
+    bool m_is_async;                  //是否同步标志位
+    locker m_mutex;
+    int m_close_log; //关闭日志
+
+};
+
+
+// #define LOG_DEBUG(format, ...) if(0 == m_close_log) {Log::get_instance()->write_log(0, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+// #define LOG_INFO(format, ...) if(0 == m_close_log) {Log::get_instance()->write_log(1, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+// #define LOG_WARN(format, ...) if(0 == m_close_log) {Log::get_instance()->write_log(2, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+// #define LOG_ERROR(format, ...) if(0 == m_close_log) {Log::get_instance()->write_log(3, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+
+#define LOG_DEBUG(format, ...) {Log::get_instance()->write_log(0, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+#define LOG_INFO(format, ...)  {Log::get_instance()->write_log(1, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+#define LOG_WARN(format, ...)  {Log::get_instance()->write_log(2, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+#define LOG_ERROR(format, ...)  {Log::get_instance()->write_log(3, format, ##__VA_ARGS__); Log::get_instance()->flush();}
 
 #endif

@@ -17,6 +17,10 @@
 
 #define MAX_FD 65535            // 最大文件描述符（客户端）数量
 #define MAX_EVENT_SIZE 10000    // 监听的最大的事件数量
+#define TIMESLOT 5             //最小超时单位
+
+// #define SYNLOG  //同步写日志
+#define ASYNLOG //异步写日志
 
 static int pipefd[2];           // 管道文件描述符 0为读，1为写
 // static sort_timer_lst timer_lst;// 定时器链表
@@ -40,6 +44,15 @@ void sig_to_pipe(int sig){
     errno = save_errno;
 }
 
+// 定时处理任务，重新定时以不断触发SIGALRM信号
+void timer_handler()
+{
+    // 定时处理任务，实际上就是调用tick()函数
+    http_conn::m_timer_lst.tick();
+    // 因为一次 alarm 调用只会引起一次SIGALARM 信号，所以我们要重新定时，以不断触发 SIGALARM信号。
+    alarm(TIMESLOT);
+}
+
 // 添加文件描述符到epoll中 （声明成外部函数）
 extern void addfd(int epoll_fd, int fd, bool one_shot, bool et); 
 
@@ -53,12 +66,20 @@ extern void modfd(int epoll_fd, int fd, int ev);
 extern void set_nonblocking(int fd);
 
 int main(int argc, char* argv[]){
+#ifdef ASYNLOG
+    Log::get_instance()->init("log/ServerLog", 2000, 800000, 100); //异步日志模型
+#endif
 
+#ifdef SYNLOG
+    Log::get_instance()->init("ServerLog", 2000, 800000, 0); //同步日志模型
+#endif
     if(argc <= 1){      // 形参个数，第一个为执行命令的名称
-        EMlog(LOGLEVEL_ERROR,"run as: %s port_number\n", basename(argv[0]));      // argv[0] 可能是带路径的，用basename转换
+        // EMlog(LOGLEVEL_ERROR, "run as: %s port_number\n", basename(argv[0]));      // argv[0] 可能是带路径的，用basename转换
+        LOG_ERROR("run as: %s port_number", basename(argv[0]));
+        Log::get_instance()->flush();  
         exit(-1);
     }
-
+    printf("Server run as Port: %s\n", argv[1]);
     // 获取端口号
     int port = atoi(argv[1]);   // 字符串转整数
 
@@ -121,7 +142,9 @@ int main(int argc, char* argv[]){
         // 检测事件
         int num = epoll_wait(epoll_fd, events, MAX_EVENT_SIZE, -1);     // 阻塞，返回事件数量
         if(num < 0 && errno != EINTR){
-            EMlog(LOGLEVEL_ERROR,"EPOLL failed.\n");
+            // EMlog(LOGLEVEL_ERROR,"EPOLL failed.\n");
+            LOG_ERROR("EPOLL failed.");
+            Log::get_instance()->flush();  
             break;
         }
 
@@ -135,6 +158,10 @@ int main(int argc, char* argv[]){
                 socklen_t client_addr_len = sizeof(client_addr);
                 int conn_fd = accept(listen_fd,(struct sockaddr*)&client_addr, &client_addr_len);
                 // ...判断是否连接成功
+                if (conn_fd == -1) {
+                    perror("accept");
+                    exit(-1);
+                }
 
                 if(http_conn::m_user_cnt >= MAX_FD){
                     // 目前连接数满了
@@ -175,12 +202,16 @@ int main(int argc, char* argv[]){
             }
             else if(events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)){
                 // 对方异常断开 或 错误 等事件
-                EMlog(LOGLEVEL_DEBUG,"-------EPOLLRDHUP | EPOLLHUP | EPOLLERR--------\n");
+                // EMlog(LOGLEVEL_DEBUG,"-------EPOLLRDHUP | EPOLLHUP | EPOLLERR--------\n");
+                LOG_DEBUG("-------EPOLLRDHUP | EPOLLHUP | EPOLLERR--------");
+                Log::get_instance()->flush(); 
                 users[sock_fd].conn_close(); 
                 http_conn::m_timer_lst.del_timer(users[sock_fd].timer);  // 移除其对应的定时器
             }
             else if(events[i].events & EPOLLIN){
-                EMlog(LOGLEVEL_DEBUG,"-------EPOLLIN-------\n\n");
+                // EMlog(LOGLEVEL_DEBUG,"-------EPOLLIN-------\n\n");
+                LOG_DEBUG("-------EPOLLIN-------\n");
+                Log::get_instance()->flush(); 
                 if (users[sock_fd].read()){         // 主进程一次性读取缓冲区的所有数据
                     pool->append(users + sock_fd);  // 加入到线程池队列中，数组指针 + 偏移 &users[sock_fd]
                 }else{
@@ -190,7 +221,9 @@ int main(int argc, char* argv[]){
 
             }
             else if(events[i].events & EPOLLOUT){
-                EMlog(LOGLEVEL_DEBUG, "-------EPOLLOUT--------\n\n");
+                // EMlog(LOGLEVEL_DEBUG, "-------EPOLLOUT--------\n\n");
+                LOG_DEBUG("-------EPOLLOUT--------\n");
+                Log::get_instance()->flush(); 
                 if (!users[sock_fd].write()){       // 主进程一次性写完所有数据
                     users[sock_fd].conn_close();    // 写入失败
                     http_conn::m_timer_lst.del_timer(users[sock_fd].timer);  // 移除其对应的定时器   
@@ -199,10 +232,8 @@ int main(int argc, char* argv[]){
         }
         // 最后处理定时事件，因为I/O事件有更高的优先级。当然，这样做将导致定时任务不能精准的按照预定的时间执行。
         if(timeout) {
-            // 定时处理任务，实际上就是调用tick()函数
-            http_conn::m_timer_lst.tick();
-            // 因为一次 alarm 调用只会引起一次SIGALARM 信号，所以我们要重新定时，以不断触发 SIGALARM信号。
-            alarm(TIMESLOT);
+            // 超时处理
+            timer_handler();
             timeout = false;    // 重置timeout
         }
     }

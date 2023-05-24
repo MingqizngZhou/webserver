@@ -1,10 +1,16 @@
 #include "lst_timer.h"
+#include "log.h"
 
 // 将目标定时器timer添加到链表中
 void sort_timer_lst::add_timer( util_timer* timer ) {
-    EMlog(LOGLEVEL_DEBUG, "===========adding timer.=============\n");
+    // EMlog(LOGLEVEL_DEBUG, "===========adding timer.=============\n");
+    LOG_DEBUG("===========adding timer.=============");
+    Log::get_instance()->flush();  
+
     if( !timer ) {
-        EMlog(LOGLEVEL_WARN ,"===========timer null.=========\n");
+        // EMlog(LOGLEVEL_WARN ,"===========timer null.=========\n");
+        LOG_WARN("===========timer null.=========");
+        Log::get_instance()->flush(); 
         return;
     }
     if( !head ) {       // 添加的为第一个节点，头结点（尾节点）
@@ -22,16 +28,22 @@ void sort_timer_lst::add_timer( util_timer* timer ) {
         add_timer(timer, head);  
     }
     // // http_conn::m_timer_lst_locker.unlock();
-    EMlog(LOGLEVEL_DEBUG,"===========added timer.==========\n");
+    // EMlog(LOGLEVEL_DEBUG,"===========added timer.==========\n");
+    LOG_DEBUG("===========added timer.==========");
+    Log::get_instance()->flush();  
 }
 
 /* 当某个定时任务发生变化时，调整对应的定时器在链表中的位置。
 这个函数只考虑被调整的定时器的超时时间延长的情况，即该定时器需要往链表的尾部移动。*/
 void sort_timer_lst::adjust_timer(util_timer* timer)
 {
-    EMlog(LOGLEVEL_DEBUG,"===========adjusting timer.=========\n");
+    // EMlog(LOGLEVEL_DEBUG,"===========adjusting timer.=========\n");
+    LOG_DEBUG("===========adjusting timer.=========");
+    Log::get_instance()->flush();  
     if( !timer )  {
-        EMlog(LOGLEVEL_WARN, "===========timer null.==========\n");
+        // EMlog(LOGLEVEL_WARN, "===========timer null.==========\n");
+        LOG_DEBUG("===========timer null.==========");
+        Log::get_instance()->flush();   
         return;
     }
     util_timer* tmp = timer->next;
@@ -51,7 +63,9 @@ void sort_timer_lst::adjust_timer(util_timer* timer)
         timer->next->prev = timer->prev;
         add_timer( timer, timer->next );
     }
-    EMlog(LOGLEVEL_DEBUG,"===========adjusted timer.==========\n");
+    // EMlog(LOGLEVEL_DEBUG,"===========adjusted timer.==========\n");
+    LOG_DEBUG("===========adjusted timer.==========");
+    Log::get_instance()->flush(); 
 }
 
 /* 一个重载的辅助函数，它被公有的 add_timer 函数和 adjust_timer 函数调用
@@ -86,7 +100,9 @@ void sort_timer_lst::add_timer(util_timer* timer, util_timer* lst_head)  {
 // 将目标定时器 timer 从链表中删除
 void sort_timer_lst::del_timer( util_timer* timer )
 {
-    EMlog(LOGLEVEL_DEBUG,"===========deleting timer.===========\n");
+    // EMlog(LOGLEVEL_DEBUG,"===========deleting timer.===========\n");
+    LOG_DEBUG("===========deleting timer.===========");
+    Log::get_instance()->flush(); 
     if( !timer ) {
         // http_conn::m_timer_lst_locker.unlock();
         return;
@@ -117,7 +133,9 @@ void sort_timer_lst::del_timer( util_timer* timer )
         timer->next->prev = timer->prev;
         delete timer;
     }
-    EMlog(LOGLEVEL_DEBUG,"===========deleted timer.===========\n");
+    // EMlog(LOGLEVEL_DEBUG,"===========deleted timer.===========\n");
+    LOG_DEBUG("===========deleted timer.===========");
+    Log::get_instance()->flush(); 
 }
 
 
@@ -126,7 +144,9 @@ void sort_timer_lst::tick() {
     if( !head ) {
         return;
     }
-    EMlog(LOGLEVEL_DEBUG, "timer tick.\n" );
+    // EMlog(LOGLEVEL_DEBUG, "timer tick.\n" );
+    LOG_DEBUG("%s", "timer tick");
+    Log::get_instance()->flush();
     time_t curr_time = time(NULL);  // 获取当前系统时间
     util_timer* tmp = head;
     // 从头节点开始依次处理每个定时器，直到遇到一个尚未到期的定时器

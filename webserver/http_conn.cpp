@@ -1,5 +1,6 @@
 #include "http_conn.h"
-
+#include "log.h"
+#include <fstream>
 
 http_conn::http_conn(){}
 
@@ -81,7 +82,10 @@ void http_conn::init(int sock_fd, const sockaddr_in& addr){
 
     char ip[16] = "";
     const char* str = inet_ntop(AF_INET, &addr.sin_addr.s_addr, ip, sizeof(ip));
-    EMlog(LOGLEVEL_INFO, "The No.%d user. sock_fd = %d, ip = %s.\n", m_user_cnt, sock_fd, str);
+    // EMlog(LOGLEVEL_INFO, "The No.%d user. sock_fd = %d, ip = %s.\n", m_user_cnt, sock_fd, str);
+    LOG_INFO("The No.%d user. sock_fd = %d, ip = %s.", m_user_cnt, sock_fd, str);
+    Log::get_instance()->flush();
+
     init();             // 初始化其他信息，私有
 
     // 创建定时器，设置其回调函数与超时时间，然后绑定定时器与用户数据，最后将定时器添加到链表timer_lst中
@@ -120,7 +124,9 @@ void http_conn::init(){
 void http_conn::conn_close(){
     if(m_sock_fd != -1){
         --m_user_cnt;   // 客户端数量减一
-        EMlog(LOGLEVEL_INFO, "closing fd: %d, rest user num :%d\n", m_sock_fd, m_user_cnt);
+        // EMlog(LOGLEVEL_INFO, "closing fd: %d, rest user num :%d\n", m_sock_fd, m_user_cnt);
+        LOG_INFO("closing fd: %d, rest user num :%d", m_sock_fd, m_user_cnt);
+        Log::get_instance()->flush();
         rmfd(m_epoll_fd, m_sock_fd);    // 移除epoll检测,关闭套接字
         m_sock_fd = -1;
     }
@@ -152,7 +158,9 @@ bool http_conn::read(){
 
     ++m_request_cnt;
 
-    EMlog(LOGLEVEL_INFO, "sock_fd = %d read done. request cnt = %d\n", m_sock_fd, m_request_cnt);    // 全部读取完毕
+    // EMlog(LOGLEVEL_INFO, "sock_fd = %d read done. request cnt = %d\n", m_sock_fd, m_request_cnt);    // 全部读取完毕
+    LOG_INFO("sock_fd = %d read done. request cnt = %d", m_sock_fd, m_request_cnt);
+    Log::get_instance()->flush();
     
     return true;
 }
@@ -171,7 +179,9 @@ http_conn::HTTP_CODE http_conn::process_read(){
         text = get_line();
         m_line_start = m_checked_idx;           // 更新下一行的起始位置
 
-        EMlog(LOGLEVEL_DEBUG, ">>>>>> %s\n", text);
+        // EMlog(LOGLEVEL_DEBUG, ">>>>>> %s\n", text);
+        LOG_DEBUG(">>>>>> %s", text);
+        Log::get_instance()->flush();
 
         switch(m_check_stat){
             case CHECK_STATE_REQUESTLINE:
@@ -280,7 +290,9 @@ http_conn::HTTP_CODE http_conn::parse_request_headers(char* text){      // 在�
         m_host = text;
     } else {
         #ifdef COUT_OPEN
-            EMlog(LOGLEVEL_DEBUG,"oop! unknow header: %s\n", text );
+            // EMlog(LOGLEVEL_DEBUG,"oop! unknow header: %s\n", text );
+            LOG_DEBUG("oop! unknow header: %s", text);
+            Log::get_instance()->flush();
         #endif   
     }
     return NO_REQUEST;
@@ -335,7 +347,7 @@ http_conn::HTTP_CODE http_conn::do_request(){
     // "/home/cyf/Linux/webserver/resources"
     strcpy( m_real_file, doc_root );
     int len = strlen( doc_root );
-    strncpy( m_real_file + len, m_url, FILENAME_LEN - len - 1 );    // 拼接目录 "/home/cyf/Linux/webserver/resources/index.html"
+    strncpy( m_real_file + len, m_url, FILENAME_LEN - len - 1 );    
     // 获取m_real_file文件的相关的状态信息，-1失败，0成功
     if ( stat( m_real_file, &m_file_stat ) < 0 ) {
         return NO_RESOURCE;
@@ -377,7 +389,9 @@ bool http_conn::write(){
         timer->expire = curr_time + 3 * TIMESLOT;
         m_timer_lst.adjust_timer( timer );
     }
-    EMlog(LOGLEVEL_INFO, "sock_fd = %d writing %d bytes. request cnt = %d\n", m_sock_fd, bytes_to_send, m_request_cnt); 
+    // EMlog(LOGLEVEL_INFO, "sock_fd = %d writing %d bytes. request cnt = %d\n", m_sock_fd, bytes_to_send, m_request_cnt); 
+    LOG_INFO("sock_fd = %d writing %d bytes. request cnt = %d", m_sock_fd, bytes_to_send, m_request_cnt);
+    Log::get_instance()->flush();
     if ( bytes_to_send == 0 ) {
         // 将要发送的字节为0，这一次响应结束。
         modfd( m_epoll_fd, m_sock_fd, EPOLLIN ); 
@@ -425,8 +439,8 @@ bool http_conn::write(){
         }
     }
     
-    // printf("write done.\n");
-    // return true;
+    printf("write done.\n");
+    return true;
 }
 
 // 往写缓冲中写入待发送的数据
@@ -447,7 +461,9 @@ bool http_conn::add_response( const char* format, ... ) {
 
 // 添加状态码（响应行）
 bool http_conn::add_status_line( int status, const char* title ) {
-    EMlog(LOGLEVEL_DEBUG,"<<<<<<< %s %d %s\r\n", "HTTP/1.1", status, title);     
+    // EMlog(LOGLEVEL_DEBUG,"<<<<<<< %s %d %s\r\n", "HTTP/1.1", status, title);   
+    LOG_DEBUG("<<<<<<< %s %d %s\r", "HTTP/1.1", status, title);
+    Log::get_instance()->flush();  
     return add_response( "%s %d %s\r\n", "HTTP/1.1", status, title );
 }
 
@@ -460,24 +476,34 @@ void http_conn::add_headers(int content_len) {
 }
 
 bool http_conn::add_content_length(int content_len) {
-    EMlog(LOGLEVEL_DEBUG,"<<<<<<< Content-Length: %d\r\n", content_len);  
+    // EMlog(LOGLEVEL_DEBUG,"<<<<<<< Content-Length: %d\r\n", content_len);  
+    LOG_DEBUG("<<<<<<< Content-Length: %d\r", content_len);
+    Log::get_instance()->flush();  
     return add_response( "Content-Length: %d\r\n", content_len );
 }
 bool http_conn::add_content_type() {    // 响应体类型，当前文本形式
-    EMlog(LOGLEVEL_DEBUG,"<<<<<<< Content-Type:%s\r\n", "text/html");  
+    // EMlog(LOGLEVEL_DEBUG,"<<<<<<< Content-Type:%s\r\n", "text/html");  
+    LOG_DEBUG("<<<<<<< Content-Type:%s\r", "text/html");
+    Log::get_instance()->flush();  
     return add_response("Content-Type:%s\r\n", "text/html");    
 }
 bool http_conn::add_linger(){
-    EMlog(LOGLEVEL_DEBUG,"<<<<<<< Connection: %s\r\n", ( m_linger == true ) ? "keep-alive" : "close" );
+    // EMlog(LOGLEVEL_DEBUG,"<<<<<<< Connection: %s\r\n", ( m_linger == true ) ? "keep-alive" : "close" );
+    LOG_DEBUG("<<<<<<< Connection: %s\r", ( m_linger == true ) ? "keep-alive" : "close");
+    Log::get_instance()->flush();  
     return add_response( "Connection: %s\r\n", ( m_linger == true ) ? "keep-alive" : "close" );
 }
 bool http_conn::add_blank_line(){
-    EMlog(LOGLEVEL_DEBUG,"<<<<<<< %s", "\r\n" );    
+    // EMlog(LOGLEVEL_DEBUG,"<<<<<<< %s", "\r\n" );    
+    LOG_DEBUG("<<<<<<< %s", "\r");
+    Log::get_instance()->flush();  
     return add_response( "%s", "\r\n" );
 }
 
 bool http_conn::add_content( const char* content ){
-    EMlog(LOGLEVEL_DEBUG,"<<<<<<< %s\n", content );
+    // EMlog(LOGLEVEL_DEBUG,"<<<<<<< %s\n", content );
+    LOG_DEBUG("<<<<<<< %s", content);
+    Log::get_instance()->flush();  
     return add_response( "%s", content );
 }
 
@@ -517,7 +543,9 @@ bool http_conn::process_write(HTTP_CODE ret){
         case FILE_REQUEST:  // 请求文件
             add_status_line(200, ok_200_title );
             add_headers(m_file_stat.st_size);
-            EMlog(LOGLEVEL_DEBUG, "<<<<<<< %s", m_file_address);
+            // EMlog(LOGLEVEL_DEBUG, "<<<<<<< %s", m_file_address);
+            LOG_DEBUG("<<<<<<< %s", m_file_address);
+            Log::get_instance()->flush();  
             // 封装m_iv
             m_iv[ 0 ].iov_base = m_write_buf;   // 起始地址
             m_iv[ 0 ].iov_len = m_write_idx;    // 长度
@@ -539,12 +567,18 @@ bool http_conn::process_write(HTTP_CODE ret){
 
 // 由线程池中的工作线程调用，处理HTTP请求的入口函数
 void http_conn::process(){      // 线程池中线程的业务处理
-    EMlog(LOGLEVEL_DEBUG, "=======parse request, create response.=======\n");
+    // EMlog(LOGLEVEL_DEBUG, "=======parse request, create response.=======\n");
+    LOG_DEBUG("=======parse request, create response.=======");
+    Log::get_instance()->flush();  
     
     // 解析HTTP请求
-    EMlog(LOGLEVEL_DEBUG,"=============process_reading=============\n");
+    // EMlog(LOGLEVEL_DEBUG,"=============process_reading=============\n");
+    LOG_DEBUG("=============process_reading=============");
+    Log::get_instance()->flush(); 
     HTTP_CODE read_ret = process_read();
-    EMlog(LOGLEVEL_INFO,"========PROCESS_READ HTTP_CODE : %d========\n", read_ret);
+    // EMlog(LOGLEVEL_INFO,"========PROCESS_READ HTTP_CODE : %d========\n", read_ret);
+    LOG_DEBUG("========PROCESS_READ HTTP_CODE : %d========", read_ret);
+    Log::get_instance()->flush(); 
     if(read_ret == NO_REQUEST){
         modfd(m_epoll_fd, m_sock_fd, EPOLLIN);  // 继续监听EPOLLIN （| EPOLLONESHOT）
         return;         // 返回，线程空闲
