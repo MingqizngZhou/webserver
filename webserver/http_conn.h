@@ -109,6 +109,8 @@ private:
     int m_iv_count;                 // 被写内存块的数量
     int bytes_to_send;              // 将要发送的字节
     int bytes_have_send;            // 已经发送的字节
+    int cgi;                        // 是否启用POST
+    char *m_string;                 // 存储请求头数据
 
     
 

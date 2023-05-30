@@ -1,6 +1,8 @@
 #include "http_conn.h"
 #include "log.h"
 #include <fstream>
+#include <map>
+#include <string>
 
 http_conn::http_conn(){}
 
@@ -24,6 +26,10 @@ const char* error_404_title = "Not Found";
 const char* error_404_form = "The requested file was not found on this server.\n";
 const char* error_500_title = "Internal Error";
 const char* error_500_form = "There was an unusual problem serving the requested file.\n";
+
+//将表中的用户名和密码放入map
+std::map<std::string, std::string> users;
+locker m_lock;
 
 // 设置文件描述符为非阻塞
 void set_nonblocking(int fd){
@@ -114,6 +120,8 @@ void http_conn::init(){
     m_write_idx = 0;
     bytes_have_send = 0;
     bytes_to_send = 0;
+
+    cgi = 0;
 
     bzero(m_rd_buf, RD_BUF_SIZE);           // 清空读缓存
     bzero(m_write_buf, WD_BUF_SIZE);        // 清空写缓存
@@ -236,15 +244,20 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char* text){
     char* method = text;    // GET\0
     if(strcasecmp(method, "GET") == 0){
         m_method = GET;
+    }else if(strcasecmp(method, "POST") == 0){
+        m_method = POST;;
+        cgi = 1;
     }else{
         return BAD_REQUEST; // 非GET请求方法
     }
 
     // /index.html HTTP/1.1
+    m_url += strspn(m_url, " \t");
     m_version = strpbrk(m_url, " \t");
     if(!m_version) return BAD_REQUEST;
     *m_version = '\0';  // /index.html\0HTTP/1.1，此时m_url到\0结束，表示 /index.html\0
     m_version++;        // HTTP/1.1
+    m_version += strspn(m_version, " \t");
     // if(strcasecmp(m_version, "HTTP/1.1") != 0) return BAD_REQUEST;  // 非HTTP1.1版本，压力测试时为1.0版本，忽略改行
 
     // 可能出现带地址的格式 http://192.168.15.128.1:9999/index.html
@@ -252,9 +265,20 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char* text){
         m_url += 7;                 // 192.168.15.128.1:9999/index.html
         m_url = strchr(m_url, '/'); // /index.html
     }
+    // 可能出现带地址的格式 https://192.168.15.128.1:9999/index.html
+    if (strncasecmp(m_url, "https://", 8) == 0)
+    {
+        m_url += 8;
+        m_url = strchr(m_url, '/');
+    }
+
     if(!m_url || m_url[0] != '/'){
         return BAD_REQUEST;
     }
+
+    //当url为/时，显示判断界面
+    if (strlen(m_url) == 1)
+        strcat(m_url, "judge.html");
 
     m_check_stat = CHECK_STATE_HEADER;  // 主状态机状态改变为检查请求头部
     return NO_REQUEST;                  // 请求尚未解析完成
@@ -305,6 +329,8 @@ http_conn::HTTP_CODE http_conn::parse_request_content(char* text){
     if ( m_rd_idx >= ( m_content_len + m_checked_idx ) )    // 读到的数据长度 大于 已解析长度（请求行+头部+空行）+请求体长度
     {                                                       // 数据被完整读取
         text[ m_content_len ] = '\0';   // 标志结束
+        //POST请求中最后为输入的用户名和密码
+        m_string = text;
         return GET_REQUEST;
     }
     return NO_REQUEST;
@@ -349,7 +375,104 @@ http_conn::HTTP_CODE http_conn::do_request(){
     // "/home/zmq/Webserver/webserver/resources"
     strcpy( m_real_file, doc_root );
     int len = strlen( doc_root );
-    strncpy( m_real_file + len, m_url, FILENAME_LEN - len - 1 );    
+    const char *p = strrchr(m_url, '/');
+
+    //处理cgi
+    if (cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3'))
+    {
+
+        //根据标志判断是登录检测还是注册检测
+        char flag = m_url[1];
+
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/");
+        strcat(m_url_real, m_url + 2);
+        strncpy(m_real_file + len, m_url_real, FILENAME_LEN - len - 1);
+        free(m_url_real);
+
+        //将用户名和密码提取出来
+        //user=123&passwd=123
+        char name[100], password[100];
+        int i;
+        for (i = 5; m_string[i] != '&'; ++i)
+            name[i - 5] = m_string[i];
+        name[i - 5] = '\0';
+
+        int j = 0;
+        for (i = i + 10; m_string[i] != '\0'; ++i, ++j)
+            password[j] = m_string[i];
+        password[j] = '\0';
+
+        //同步线程登录校验
+        if (*(p + 1) == '3')
+        {
+            if (users.find(name) == users.end())
+            {
+
+                m_lock.lock();
+                users.insert(std::pair<std::string, std::string>(name, password));
+                m_lock.unlock();
+
+                strcpy(m_url, "/log.html");
+            }
+            else
+                strcpy(m_url, "/registerError.html");
+        }
+        //如果是登录，直接判断
+        //若浏览器端输入的用户名和密码在表中可以查找到，返回1，否则返回0
+        else if (*(p + 1) == '2')
+        {
+            if (users.find(name) != users.end() && users[name] == password)
+                strcpy(m_url, "/welcome.html");
+            else
+                strcpy(m_url, "/logError.html");
+        }
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+    }
+
+    if (*(p + 1) == '0')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/register.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    else if (*(p + 1) == '1')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/log.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    else if (*(p + 1) == '5')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/picture.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    else if (*(p + 1) == '6')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/video.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    else if (*(p + 1) == '7')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/index.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    else
+        strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
+         
     // 获取m_real_file文件的相关的状态信息，-1失败，0成功
     if ( stat( m_real_file, &m_file_stat ) < 0 ) {
         return NO_RESOURCE;
@@ -544,18 +667,25 @@ bool http_conn::process_write(HTTP_CODE ret){
             break;
         case FILE_REQUEST:  // 请求文件
             add_status_line(200, ok_200_title );
-            add_headers(m_file_stat.st_size);
-            // EMlog(LOGLEVEL_DEBUG, "<<<<<<< %s", m_file_address);
-            LOG_DEBUG("<<<<<<< %s", m_file_address);
-            Log::get_instance()->flush();  
-            // 封装m_iv
-            m_iv[ 0 ].iov_base = m_write_buf;   // 起始地址
-            m_iv[ 0 ].iov_len = m_write_idx;    // 长度
-            m_iv[ 1 ].iov_base = m_file_address;
-            m_iv[ 1 ].iov_len = m_file_stat.st_size;
-            m_iv_count = 2;                     // 两块内存
-            bytes_to_send = m_write_idx + m_file_stat.st_size;  // 响应头的大小 + 文件的大小
-            return true;
+            if (m_file_stat.st_size != 0){
+                add_headers(m_file_stat.st_size);
+                // EMlog(LOGLEVEL_DEBUG, "<<<<<<< %s", m_file_address);
+                LOG_DEBUG("<<<<<<< %s", m_file_address);
+                Log::get_instance()->flush();  
+                // 封装m_iv
+                m_iv[ 0 ].iov_base = m_write_buf;   // 起始地址
+                m_iv[ 0 ].iov_len = m_write_idx;    // 长度
+                m_iv[ 1 ].iov_base = m_file_address;
+                m_iv[ 1 ].iov_len = m_file_stat.st_size;
+                m_iv_count = 2;                     // 两块内存
+                bytes_to_send = m_write_idx + m_file_stat.st_size;  // 响应头的大小 + 文件的大小
+                return true;
+            }else{
+                const char *ok_string = "<html><body></body></html>";
+                add_headers(strlen(ok_string));
+                if (!add_content(ok_string))
+                    return false;
+            }
         default:
             return false;
     }
