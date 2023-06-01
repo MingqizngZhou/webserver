@@ -1,5 +1,5 @@
-main : main.o lst_timer.o http_conn.o log.o
-	g++ main.o lst_timer.o http_conn.o log.o -o main -lpthread
+main : main.o lst_timer.o http_conn.o log.o sql_connection_pool.o
+	g++ main.o lst_timer.o http_conn.o log.o sql_connection_pool.o -o main -lpthread -lmysqlclient
 
 main.o : main.cpp
 	g++ -c main.cpp
@@ -12,6 +12,9 @@ http_conn.o : http_conn.cpp
 
 log.o : log.cpp
 	g++ -c log.cpp
+
+sql_connection_pool.o : sql_connection_pool.cpp
+	g++ -c sql_connection_pool.cpp
 
 # .PHONY:clean
 clean:

@@ -6,13 +6,14 @@
 #include <exception>
 #include <pthread.h>
 #include "locker.h"
+#include "sql_connection_pool.h"
 
 // 线程池类，将它定义为模板类是为了代码复用，模板参数T是任务类
 template<typename T>
 class threadpool {
 public:
     /*thread_number是线程池中线程的数量，max_requests是请求队列中最多允许的、等待处理的请求的数量*/
-    threadpool(int thread_number = 8, int max_requests = 10000);
+    threadpool(connection_pool *connPool, int thread_number = 8, int max_requests = 10000);
     ~threadpool();
     bool append(T* request);
 
@@ -41,13 +42,15 @@ private:
     sem m_queuestat;
 
     // 是否结束线程          
-    bool m_stop;                    
+    bool m_stop;   
+    // 连接数据库
+    connection_pool *m_connPool;        
 };
 
 template< typename T >
-threadpool< T >::threadpool(int thread_number, int max_requests) : 
+threadpool< T >::threadpool(connection_pool *connPool, int thread_number, int max_requests) : 
         m_thread_number(thread_number), m_max_requests(max_requests), 
-        m_stop(false), m_threads(NULL) {
+        m_stop(false), m_threads(NULL), m_connPool(connPool) {
 
     if((thread_number <= 0) || (max_requests <= 0) ) {
         throw std::exception();
@@ -120,6 +123,8 @@ void threadpool< T >::run() {
         if ( !request ) {
             continue;
         }
+
+        connectionRAII mysqlcon(&request->mysql, m_connPool);
         request->process();
     }
 

@@ -14,6 +14,7 @@
 #include "http_conn.h"
 #include "lst_timer.h"
 #include "log.h"
+#include "sql_connection_pool.h"
 
 #define MAX_FD 65535            // 最大文件描述符（客户端）数量
 #define MAX_EVENT_SIZE 10000    // 监听的最大的事件数量
@@ -71,7 +72,7 @@ int main(int argc, char* argv[]){
 #endif
 
 #ifdef SYNLOG
-    Log::get_instance()->init("ServerLog", 2000, 800000, 0); //同步日志模型
+    Log::get_instance()->init("log/ServerLog", 2000, 800000, 0); //同步日志模型
 #endif
     if(argc <= 1){      // 形参个数，第一个为执行命令的名称
         // EMlog(LOGLEVEL_ERROR, "run as: %s port_number\n", basename(argv[0]));      // argv[0] 可能是带路径的，用basename转换
@@ -84,7 +85,11 @@ int main(int argc, char* argv[]){
     int port = atoi(argv[1]);   // 字符串转整数
 
     // 对SIGPIE信号进行处理(捕捉忽略，默认退出)
-    addsig(SIGPIPE, SIG_IGN);           
+    addsig(SIGPIPE, SIG_IGN);       
+
+    //创建数据库连接池
+    connection_pool *connPool = connection_pool::GetInstance();
+    connPool->init("localhost", "debian-sys-maint", "UW1uE5OekHYOBrjq", "yourdb", 3306, 8);    
     
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);    // 监听套接字
     assert( listen_fd >= 0 );                            // ...判断是否创建成功
@@ -98,6 +103,8 @@ int main(int argc, char* argv[]){
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
+
+
     int ret = bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr));
     assert( ret != -1 );    // ...判断是否成功
 
@@ -130,10 +137,13 @@ int main(int argc, char* argv[]){
     // 创建线程池，初始化线程池
     threadpool<http_conn> * pool = NULL;    // 模板类 指定任务类类型为 http_conn
     try{
-        pool = new threadpool<http_conn>;
+        pool = new threadpool<http_conn>(connPool);
     }catch(...){
         exit(-1);
     }
+
+    //初始化数据库读取表
+    users->initmysql_result(connPool);
 
     bool timeout = false;   // 定时器周期已到
     alarm(TIMESLOT);        // 定时产生SIGALRM信号

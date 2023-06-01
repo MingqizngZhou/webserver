@@ -3,6 +3,9 @@
 
 ## 版本信息
 
+> webserver v6.0
+将用户的信息存储在Mysql中
+
 > webserver v5.0
 增加POST功能, 实现基本的用户注册, 登录, 请求资源
 

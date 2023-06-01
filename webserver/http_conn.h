@@ -20,7 +20,7 @@
 #include "locker.h"
 #include "lst_timer.h"
 #include "log.h"
-
+#include "sql_connection_pool.h"
 
 class sort_timer_lst;
 class util_timer;
@@ -44,6 +44,7 @@ public:                         // 共享对象，没有线程竞争资源，所
     static const int FILENAME_LEN = 200;    //文件名的最大长度
 
     util_timer* timer;              // 定时器
+    MYSQL *mysql;
 public:
     // HTTP请求方法，这里只支持GET
     enum METHOD {GET = 0, POST, HEAD, PUT, DELETE, TRACE, OPTIONS, CONNECT};
@@ -82,6 +83,11 @@ public:
     bool read();        // 非阻塞的读
     bool write();       // 非阻塞的写
     void del_fd();      // 定时器回调函数，被tick()调用
+    sockaddr_in *get_address()
+    {
+        return &m_addr;
+    }
+    void initmysql_result(connection_pool *connPool);
 
 private:
     int m_sock_fd;                  // 该http连接的socket

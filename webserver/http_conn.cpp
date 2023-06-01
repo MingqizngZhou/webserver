@@ -3,6 +3,7 @@
 #include <fstream>
 #include <map>
 #include <string>
+#include <mysql/mysql.h>
 
 http_conn::http_conn(){}
 
@@ -30,6 +31,37 @@ const char* error_500_form = "There was an unusual problem serving the requested
 //将表中的用户名和密码放入map
 std::map<std::string, std::string> users;
 locker m_lock;
+
+void http_conn::initmysql_result(connection_pool *connPool)
+{
+    //先从连接池中取一个连接
+    MYSQL *mysql = NULL;
+    connectionRAII mysqlcon(&mysql, connPool);
+
+    //在user表中检索username，passwd数据，浏览器端输入
+    if (mysql_query(mysql, "SELECT username,passwd FROM user"))
+    {
+        LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
+    }
+
+    //从表中检索完整的结果集
+    MYSQL_RES *result = mysql_store_result(mysql);
+
+    //返回结果集中的列数
+    int num_fields = mysql_num_fields(result);
+
+    //返回所有字段结构的数组
+    MYSQL_FIELD *fields = mysql_fetch_fields(result);
+
+    //从结果集中获取下一行，将对应的用户名和密码，存入map中
+    while (MYSQL_ROW row = mysql_fetch_row(result))
+    {
+        std::string temp1(row[0]);
+        std::string temp2(row[1]);
+        users[temp1] = temp2;
+        // std::cout << temp1 << " " << temp2 << std::endl;
+    }
+}
 
 // 设置文件描述符为非阻塞
 void set_nonblocking(int fd){
@@ -105,6 +137,7 @@ void http_conn::init(int sock_fd, const sockaddr_in& addr){
 
 // 初始化连接之外的其他信息
 void http_conn::init(){
+    mysql = NULL;
     m_method = GET;
     m_url = 0;
     m_version = 0;
@@ -406,14 +439,32 @@ http_conn::HTTP_CODE http_conn::do_request(){
         //同步线程登录校验
         if (*(p + 1) == '3')
         {
+            //如果是注册，先检测数据库中是否有重名的
+            //没有重名的，进行增加数据
+            char *sql_insert = (char *)malloc(sizeof(char) * 200);
+            strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
+            strcat(sql_insert, "'");
+            strcat(sql_insert, name);
+            strcat(sql_insert, "', '");
+            strcat(sql_insert, password);
+            strcat(sql_insert, "')");
+            // std::cout << sql_insert << std::endl;
+
             if (users.find(name) == users.end())
             {
 
                 m_lock.lock();
+                int res = mysql_query(mysql, sql_insert); 
                 users.insert(std::pair<std::string, std::string>(name, password));
                 m_lock.unlock();
 
-                strcpy(m_url, "/log.html");
+                if (!res) {
+                    strcpy(m_url, "/log.html");
+                    LOG_INFO("Mysql : %s", sql_insert);
+    		        Log::get_instance()->flush();
+                }
+                else
+                    strcpy(m_url, "/registerError.html");
             }
             else
                 strcpy(m_url, "/registerError.html");
