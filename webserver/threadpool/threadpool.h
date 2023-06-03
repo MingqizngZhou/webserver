@@ -5,8 +5,8 @@
 #include <cstdio>
 #include <exception>
 #include <pthread.h>
-#include "locker.h"
-#include "sql_connection_pool.h"
+#include "../locker/locker.h"
+#include "../sql_connection_pool/sql_connection_pool.h"
 
 // 线程池类，将它定义为模板类是为了代码复用，模板参数T是任务类
 template<typename T>

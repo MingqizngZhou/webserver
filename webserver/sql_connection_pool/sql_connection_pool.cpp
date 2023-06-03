@@ -6,8 +6,8 @@
 #include <list>
 #include <pthread.h>
 #include <iostream>
-#include "sql_connection_pool.h"
-#include "log.h"
+#include "../sql_connection_pool/sql_connection_pool.h"
+#include "../log/log.h"
 
 connection_pool::connection_pool()
 {

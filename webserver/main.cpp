@@ -9,12 +9,12 @@
 #include <sys/epoll.h>
 #include <signal.h>
 #include <assert.h>
-#include "locker.h"
-#include "threadpool.h"
-#include "http_conn.h"
-#include "lst_timer.h"
-#include "log.h"
-#include "sql_connection_pool.h"
+#include "locker/locker.h"
+#include "threadpool/threadpool.h"
+#include "http_conn/http_conn.h"
+#include "timer/lst_timer.h"
+#include "log/log.h"
+#include "sql_connection_pool/sql_connection_pool.h"
 
 #define MAX_FD 65535            // 最大文件描述符（客户端）数量
 #define MAX_EVENT_SIZE 10000    // 监听的最大的事件数量
@@ -68,11 +68,11 @@ extern void set_nonblocking(int fd);
 
 int main(int argc, char* argv[]){
 #ifdef ASYNLOG
-    Log::get_instance()->init("log/ServerLog", 2000, 800000, 100); //异步日志模型
+    Log::get_instance()->init("log_file/ServerLog", 2000, 800000, 100); //异步日志模型
 #endif
 
 #ifdef SYNLOG
-    Log::get_instance()->init("log/ServerLog", 2000, 800000, 0); //同步日志模型
+    Log::get_instance()->init("log_file/ServerLog", 2000, 800000, 0); //同步日志模型
 #endif
     if(argc <= 1){      // 形参个数，第一个为执行命令的名称
         // EMlog(LOGLEVEL_ERROR, "run as: %s port_number\n", basename(argv[0]));      // argv[0] 可能是带路径的，用basename转换

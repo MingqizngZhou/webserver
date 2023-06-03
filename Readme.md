@@ -9,6 +9,7 @@
 * 利用RAII机制实现了数据库连接池，减少数据库连接建立与关闭的开销，同时实现了用户注册登录功能；
 * 利用阻塞队列实现异步日志系统，记录服务器的运行状态；
 * 基于链表实现的定时器，关闭超时的非活动连接。
+* 访问服务器数据库实现web端用户注册、登录功能，可以请求服务器图片和视频文件
 
 ## 版本信息
 
@@ -97,4 +98,56 @@ Benchmarking: GET http://xxx.xx.xx.xxx:10000/index.html
 
 Speed=54084 pages/min, 431874 bytes/sec.
 Requests: 4507 susceed, 0 failed.
+~~~
+
+## 文件树
+~~~
+.
+├── client
+│   └── src
+│       └── main.c
+├── Readme.md
+├── server
+│   └── src
+│       └── main.c
+└── webserver
+    ├── build.sh
+    ├── http_conn
+    │   ├── http_conn.cpp
+    │   └── http_conn.h
+    ├── locker
+    │   └── locker.h
+    ├── log
+    │   ├── block_queue.h
+    │   ├── log.cpp
+    │   └── log.h
+    ├── log_file
+    ├── main.cpp
+    ├── Makefile
+    ├── resources                   // 静态文件
+    │   ├── images
+    │   │   ├── image1.jpg
+    │   │   ├── xxx.jpg
+    │   │   └── xxx.mp4
+    │   ├── index.html
+    │   ├── judge.html
+    │   ├── logError.html
+    │   ├── log.html
+    │   ├── picture.html
+    │   ├── registerError.html
+    │   ├── register.html
+    │   ├── video.html
+    │   └── welcome.html
+    ├── sql_connection_pool
+    │   ├── sql_connection_pool.cpp
+    │   └── sql_connection_pool.h
+    ├── test_presure                // 压力测试工具
+    │   └── webbench-1.5  
+    ├── threadpool
+    │   └── threadpool.h
+    └── timer
+        ├── lst_timer.cpp
+        └── lst_timer.h
+
+17 directories, 44 files
 ~~~

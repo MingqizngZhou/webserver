@@ -17,10 +17,10 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
-#include "locker.h"
-#include "lst_timer.h"
-#include "log.h"
-#include "sql_connection_pool.h"
+#include "../locker/locker.h"
+#include "../timer/lst_timer.h"
+#include "../log/log.h"
+#include "../sql_connection_pool/sql_connection_pool.h"
 
 class sort_timer_lst;
 class util_timer;

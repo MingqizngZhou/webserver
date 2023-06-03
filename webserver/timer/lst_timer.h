@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <time.h>
 #include <arpa/inet.h>
-#include "http_conn.h"
-#include "locker.h"
-#include "log.h"
+#include "../http_conn/http_conn.h"
+#include "../locker/locker.h"
+#include "../log/log.h"
 
 class http_conn;   // 前向声明
 

@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <sys/time.h>
-#include "locker.h"
+#include "../locker/locker.h"
 
 template <class T>
 class block_queue
