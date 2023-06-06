@@ -241,6 +241,7 @@ int main(int argc, char* argv[]){
                 timer->cb_func(&users_timer[sock_fd]);
                 if (timer) {
                     m_timer_heap.del_timer(timer);  // 移除其对应的定时器
+                    delete timer;
                 }
             }
             else if(events[i].events & EPOLLIN){
@@ -264,6 +265,7 @@ int main(int argc, char* argv[]){
                     timer->cb_func(&users_timer[sock_fd]);
                     if (timer) {
                         m_timer_heap.del_timer(timer);  // 移除其对应的定时器
+                        delete timer;
                     }
                 }
 
@@ -288,6 +290,7 @@ int main(int argc, char* argv[]){
                     Log::get_instance()->flush();
                     if (timer) {
                         m_timer_heap.del_timer(users[sock_fd].timer);  // 移除其对应的定时器 
+                        delete timer;
                     }
                 }
             }

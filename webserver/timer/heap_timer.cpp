@@ -79,6 +79,8 @@ void HeapTimer::del_timer(TimerNode* timer) {
 }
 
 void HeapTimer::del_(size_t index) {
+    LOG_DEBUG("===========deleting timer.===========");
+    Log::get_instance()->flush(); 
     /* 删除指定位置的结点 */
     assert(!heap_.empty() && index >= 0 && index < heap_.size());
     /* 将要删除的结点换到队尾，然后调整堆 */
@@ -94,12 +96,10 @@ void HeapTimer::del_(size_t index) {
     /* 队尾元素删除 */
 
     ref_.erase(heap_.back()->user_data);
-    // TimerNode t = heap_.back();  // ?
     heap_.pop_back();
-    LOG_DEBUG("===========deleting timer.===========");
+
+    LOG_DEBUG("===========deleted timer.===========");
     Log::get_instance()->flush(); 
-    // 内存管理 ??
-    // delete &t;
 }
 
 void HeapTimer::adjust(TimerNode* timer, int new_time_out) {

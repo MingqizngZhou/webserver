@@ -26,6 +26,9 @@ class TimerNode
 {
 public:
     TimerNode(){}
+    ~TimerNode() {
+        delete user_data;
+    }
 
 public:
     time_t expire;
