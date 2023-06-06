@@ -18,12 +18,15 @@
 #include <time.h>
 #include <assert.h>
 #include "../locker/locker.h"
-#include "../timer/lst_timer.h"
+// #include "../timer/lst_timer.h"
+#include "../timer/heap_timer.h"
 #include "../log/log.h"
 #include "../sql_connection_pool/sql_connection_pool.h"
 
-class sort_timer_lst;
-class util_timer;
+// class sort_timer_lst;
+// class util_timer;
+class TimerNode;
+class HeapTimer;
 
 #define COUT_OPEN 1
 const bool ET = true;
@@ -36,14 +39,16 @@ public:                         // 共享对象，没有线程竞争资源，所
     static int m_epoll_fd;      // 所有的socket上的事件都被注册到同一个epoll对象中
     static int m_user_cnt;      // 统计用户的数量
     static int m_request_cnt;   // 接收到的请求次数
-    static sort_timer_lst m_timer_lst;// 定时器链表
+    // static sort_timer_lst m_timer_lst;// 定时器链表
     // static locker m_timer_lst_locker;  // 定时器链表互斥锁
+    static HeapTimer m_timer_heap;
 
     static const int RD_BUF_SIZE = 2048;    // 读缓冲区的大小
     static const int WD_BUF_SIZE = 2048;    // 写缓冲区的大小
     static const int FILENAME_LEN = 200;    //文件名的最大长度
 
-    util_timer* timer;              // 定时器
+    // util_timer* timer;              // 定时器
+    TimerNode * timer;
     MYSQL *mysql;
 public:
     // HTTP请求方法，这里只支持GET

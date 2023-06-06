@@ -12,7 +12,8 @@
 #include "locker/locker.h"
 #include "threadpool/threadpool.h"
 #include "http_conn/http_conn.h"
-#include "timer/lst_timer.h"
+// #include "timer/lst_timer.h"
+#include "timer/heap_timer.h"
 #include "log/log.h"
 #include "sql_connection_pool/sql_connection_pool.h"
 
@@ -24,7 +25,17 @@
 #define ASYNLOG //异步写日志
 
 static int pipefd[2];           // 管道文件描述符 0为读，1为写
-// static sort_timer_lst timer_lst;// 定时器链表
+static HeapTimer m_timer_heap;   // 定时器堆
+static int epoll_fd = 0;
+
+// 添加文件描述符到epoll中 （声明成外部函数）
+extern void addfd(int epoll_fd, int fd, bool one_shot, bool et); 
+// 从epoll中删除文件描述符
+extern void rmfd(int epoll_fd, int fd);
+// 在epoll中修改文件描述符
+extern void modfd(int epoll_fd, int fd, int ev);
+// 文件描述符设置非阻塞操作
+extern void set_nonblocking(int fd);
 
 // 信号处理，添加信号捕捉
 void addsig(int sig, void(handler)(int)){       
@@ -49,22 +60,21 @@ void sig_to_pipe(int sig){
 void timer_handler()
 {
     // 定时处理任务，实际上就是调用tick()函数
-    http_conn::m_timer_lst.tick();
+    m_timer_heap.tick();
     // 因为一次 alarm 调用只会引起一次SIGALARM 信号，所以我们要重新定时，以不断触发 SIGALARM信号。
     alarm(TIMESLOT);
 }
 
-// 添加文件描述符到epoll中 （声明成外部函数）
-extern void addfd(int epoll_fd, int fd, bool one_shot, bool et); 
-
-// 从epoll中删除文件描述符
-extern void rmfd(int epoll_fd, int fd);
-
-// 在epoll中修改文件描述符
-extern void modfd(int epoll_fd, int fd, int ev);
-
-// 文件描述符设置非阻塞操作
-extern void set_nonblocking(int fd);
+//定时器回调函数，删除非活动连接在socket上的注册事件，并关闭
+void cb_func(client_data *user_data)
+{
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, user_data->sockfd, 0);
+    assert(user_data);
+    close(user_data->sockfd);
+    http_conn::m_user_cnt--;
+    LOG_INFO("close fd %d", user_data->sockfd);
+    Log::get_instance()->flush();
+}
 
 int main(int argc, char* argv[]){
 #ifdef ASYNLOG
@@ -114,7 +124,7 @@ int main(int argc, char* argv[]){
 
     // 创建epoll对象，事件数组（IO多路复用，同时检测多个事件）
     epoll_event events[MAX_EVENT_SIZE]; // 结构体数组，接收检测后的数据
-    int epoll_fd = epoll_create(5);     // 参数 5 无意义， > 0 即可
+    epoll_fd = epoll_create(5);     // 参数 5 无意义， > 0 即可
     assert( epoll_fd != -1 );
     // 将监听的文件描述符添加到epoll对象中
     addfd(epoll_fd, listen_fd, false, false);  // 监听文件描述符不需要 ONESHOT & ET
@@ -144,6 +154,8 @@ int main(int argc, char* argv[]){
 
     //初始化数据库读取表
     users->initmysql_result(connPool);
+
+    client_data *users_timer = new client_data[MAX_FD];
 
     bool timeout = false;   // 定时器周期已到
     alarm(TIMESLOT);        // 定时产生SIGALRM信号
@@ -184,6 +196,15 @@ int main(int argc, char* argv[]){
                 // 当listen_fd也注册了ONESHOT事件时(addfd)，
                 // 接受了新的连接后需要重置socket上EPOLLONESHOT事件，确保下次可读时，EPOLLIN 事件被触发
                 // modfd(epoll_fd, listen_fd, EPOLLIN); 
+
+                // 创建定时器，设置其回调函数与超时时间，然后绑定定时器与用户数据，最后将定时器添加到堆timer_heap中
+                users_timer[conn_fd].address = client_addr;
+                users_timer[conn_fd].sockfd = conn_fd;
+                TimerNode* timer = new TimerNode;
+                timer->user_data = &users_timer[conn_fd];
+                timer->cb_func = cb_func;
+                users_timer[conn_fd].timer = timer;
+                m_timer_heap.add(timer, 3 * TIMESLOT);
  
             }   
                 // 读管道有数据，SIGALRM 或 SIGTERM信号触发
@@ -215,18 +236,35 @@ int main(int argc, char* argv[]){
                 // EMlog(LOGLEVEL_DEBUG,"-------EPOLLRDHUP | EPOLLHUP | EPOLLERR--------\n");
                 LOG_DEBUG("-------EPOLLRDHUP | EPOLLHUP | EPOLLERR--------");
                 Log::get_instance()->flush(); 
-                users[sock_fd].conn_close(); 
-                http_conn::m_timer_lst.del_timer(users[sock_fd].timer);  // 移除其对应的定时器
+                //服务器端关闭连接，移除对应的定时器
+                TimerNode *timer = users_timer[sock_fd].timer;
+                timer->cb_func(&users_timer[sock_fd]);
+                if (timer) {
+                    m_timer_heap.del_timer(timer);  // 移除其对应的定时器
+                }
             }
             else if(events[i].events & EPOLLIN){
                 // EMlog(LOGLEVEL_DEBUG,"-------EPOLLIN-------\n\n");
+                TimerNode *timer = users_timer[sock_fd].timer;
+
                 LOG_DEBUG("-------EPOLLIN-------\n");
-                Log::get_instance()->flush(); 
+                Log::get_instance()->flush();
+
                 if (users[sock_fd].read()){         // 主进程一次性读取缓冲区的所有数据
+                    LOG_INFO("deal with the client(%s)", inet_ntoa(users[sock_fd].get_address()->sin_addr));
+                    Log::get_instance()->flush();
+
                     pool->append(users + sock_fd);  // 加入到线程池队列中，数组指针 + 偏移 &users[sock_fd]
+
+                    if (timer) {
+                        m_timer_heap.adjust(timer, 3 * TIMESLOT);
+                    }
+
                 }else{
-                    users[sock_fd].conn_close();
-                    http_conn::m_timer_lst.del_timer(users[sock_fd].timer);  // 移除其对应的定时器
+                    timer->cb_func(&users_timer[sock_fd]);
+                    if (timer) {
+                        m_timer_heap.del_timer(timer);  // 移除其对应的定时器
+                    }
                 }
 
             }
@@ -234,11 +272,23 @@ int main(int argc, char* argv[]){
                 // EMlog(LOGLEVEL_DEBUG, "-------EPOLLOUT--------\n\n");
                 LOG_DEBUG("-------EPOLLOUT--------\n");
                 Log::get_instance()->flush(); 
-                if (!users[sock_fd].write()){       // 主进程一次性写完所有数据
-                    users[sock_fd].conn_close();    // 写入失败
+
+                TimerNode* timer = users_timer[sock_fd].timer;
+                if (users[sock_fd].write()) {
+                    // 主进程一次性写完所有数据
+                    LOG_INFO("send data to the client(%s)", inet_ntoa(users[sock_fd].get_address()->sin_addr));
+                    Log::get_instance()->flush();
+
+                    m_timer_heap.adjust(timer, 3 * TIMESLOT);
+
+                }
+                else {
+                    timer->cb_func(&users_timer[sock_fd]);    // 写入失败
                     LOG_ERROR("-------WRITE FAILED--------\n");
-                    Log::get_instance()->flush(); 
-                    http_conn::m_timer_lst.del_timer(users[sock_fd].timer);  // 移除其对应的定时器   
+                    Log::get_instance()->flush();
+                    if (timer) {
+                        m_timer_heap.del_timer(users[sock_fd].timer);  // 移除其对应的定时器 
+                    }
                 }
             }
         }
@@ -253,7 +303,8 @@ int main(int argc, char* argv[]){
     close(listen_fd);
     close(pipefd[1]);
     close(pipefd[0]);
-    delete[] users;
+    delete[] users;    
+    delete[] users_timer;
     delete pool;
     return 0;
 }

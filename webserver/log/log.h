@@ -9,7 +9,7 @@
 #include "block_queue.h"
 
 #define OPEN_LOG 1                  // 声明是否打开日志输出
-#define LOG_LEVEL LOGLEVEL_INFO     // 声明当前程序的日志等级状态，只输出等级等于或高于该值的内容
+#define LOG_LEVEL LOGLEVEL_DEBUG     // 声明当前程序的日志等级状态，只输出等级等于或高于该值的内容
 #define LOG_SAVE 0                  // 可补充日志保存功能
 
 typedef enum{                       // 日志等级，越往下等级越高
@@ -77,10 +77,10 @@ private:
 // #define LOG_WARN(format, ...) if(0 == m_close_log) {Log::get_instance()->write_log(2, format, ##__VA_ARGS__); Log::get_instance()->flush();}
 // #define LOG_ERROR(format, ...) if(0 == m_close_log) {Log::get_instance()->write_log(3, format, ##__VA_ARGS__); Log::get_instance()->flush();}
 
-#define LOG_DEBUG(format, ...) if(1 == OPEN_LOG) {Log::get_instance()->write_log(0, format, ##__VA_ARGS__); Log::get_instance()->flush();}
-#define LOG_INFO(format, ...) if(1 == OPEN_LOG) {Log::get_instance()->write_log(1, format, ##__VA_ARGS__); Log::get_instance()->flush();}
-#define LOG_WARN(format, ...) if(1 == OPEN_LOG) {Log::get_instance()->write_log(2, format, ##__VA_ARGS__); Log::get_instance()->flush();}
-#define LOG_ERROR(format, ...) if(1 == OPEN_LOG) {Log::get_instance()->write_log(3, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+#define LOG_DEBUG(format, ...) if(1 == OPEN_LOG && LOGLEVEL_DEBUG >= LOG_LEVEL ) {Log::get_instance()->write_log(0, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+#define LOG_INFO(format, ...) if(1 == OPEN_LOG && LOGLEVEL_INFO >= LOG_LEVEL ) {Log::get_instance()->write_log(1, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+#define LOG_WARN(format, ...) if(1 == OPEN_LOG && LOGLEVEL_WARN >= LOG_LEVEL) {Log::get_instance()->write_log(2, format, ##__VA_ARGS__); Log::get_instance()->flush();}
+#define LOG_ERROR(format, ...) if(1 == OPEN_LOG && LOGLEVEL_ERROR >= LOG_LEVEL) {Log::get_instance()->write_log(3, format, ##__VA_ARGS__); Log::get_instance()->flush();}
 
 // #define LOG_DEBUG(format, ...) {Log::get_instance()->write_log(0, format, ##__VA_ARGS__); Log::get_instance()->flush();}
 // #define LOG_INFO(format, ...)  {Log::get_instance()->write_log(1, format, ##__VA_ARGS__); Log::get_instance()->flush();}

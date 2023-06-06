@@ -1,11 +1,14 @@
-main : main.o lst_timer.o http_conn.o log.o sql_connection_pool.o
-	g++ main.o lst_timer.o http_conn.o log.o sql_connection_pool.o -o main -lpthread -lmysqlclient
+main : main.o heap_timer.o http_conn.o log.o sql_connection_pool.o
+	g++ main.o heap_timer.o http_conn.o log.o sql_connection_pool.o -o main -lpthread -lmysqlclient
 
 main.o : main.cpp
 	g++ -c main.cpp
 
-lst_timer.o : timer/lst_timer.cpp
-	g++ -c timer/lst_timer.cpp
+# lst_timer.o : timer/lst_timer.cpp
+# 	g++ -c timer/lst_timer.cpp
+
+heap_timer.o : timer/heap_timer.cpp
+	g++ -c timer/heap_timer.cpp
 
 http_conn.o : http_conn/http_conn.cpp
 	g++ -c http_conn/http_conn.cpp

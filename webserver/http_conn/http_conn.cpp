@@ -12,7 +12,8 @@ http_conn::~http_conn(){}
 int http_conn::m_epoll_fd = -1;     // 类中静态成员需要外部定义
 int http_conn::m_user_cnt = 0;  
 int http_conn::m_request_cnt = 0; 
-sort_timer_lst http_conn::m_timer_lst;
+HeapTimer http_conn::m_timer_heap;
+
 // locker http_conn::m_timer_lst_locker;
 
 // 网站的根目录
@@ -126,13 +127,6 @@ void http_conn::init(int sock_fd, const sockaddr_in& addr){
 
     init();             // 初始化其他信息，私有
 
-    // 创建定时器，设置其回调函数与超时时间，然后绑定定时器与用户数据，最后将定时器添加到链表timer_lst中
-    util_timer* new_timer = new util_timer;
-    new_timer->user_data = this;
-    time_t curr_time = time(NULL);
-    new_timer->expire = curr_time + 3 * TIMESLOT;
-    this->timer = new_timer;
-    m_timer_lst.add_timer(new_timer);  
 }
 
 // 初始化连接之外的其他信息
@@ -176,9 +170,10 @@ void http_conn::conn_close(){
 // 循环读取客户数据，直到无数据可读 或 关闭连接
 bool http_conn::read(){
     if(timer) {             // 更新超时时间
-        time_t curr_time = time( NULL );
-        timer->expire = curr_time + 3 * TIMESLOT;
-        m_timer_lst.adjust_timer( timer );
+
+        // time_t curr_time = time( NULL );
+        // timer->expire = curr_time + 3 * TIMESLOT;
+        m_timer_heap.adjust( timer, 3 * TIMESLOT );
     }
     
     if(m_rd_idx >= RD_BUF_SIZE) return false;   // 超过缓冲区大小
@@ -561,9 +556,10 @@ bool http_conn::write(){
     int temp = 0;
 
     if(timer) {             // 更新超时时间
-        time_t curr_time = time( NULL );
-        timer->expire = curr_time + 3 * TIMESLOT;
-        m_timer_lst.adjust_timer( timer );
+
+        // time_t curr_time = time( NULL );
+        // timer->expire = curr_time + 3 * TIMESLOT;
+        m_timer_heap.adjust( timer, 3 * TIMESLOT );
     }
     // EMlog(LOGLEVEL_INFO, "sock_fd = %d writing %d bytes. request cnt = %d\n", m_sock_fd, bytes_to_send, m_request_cnt); 
     LOG_INFO("sock_fd = %d writing %d bytes. request cnt = %d", m_sock_fd, bytes_to_send, m_request_cnt);
@@ -615,6 +611,8 @@ bool http_conn::write(){
         }
     }
     // printf("write done.\n");
+    LOG_INFO("write done.");
+    Log::get_instance()->flush();
 }
 
 // 往写缓冲中写入待发送的数据
@@ -772,7 +770,7 @@ void http_conn::process(){      // 线程池中线程的业务处理
     bool write_ret = process_write(read_ret);
     if(!write_ret){
         conn_close();
-        if(timer) m_timer_lst.del_timer(timer);  // 移除其对应的定时器
+        if(timer) m_timer_heap.del_timer(timer);  // 移除其对应的定时器
     }
  
     modfd(m_epoll_fd, m_sock_fd, EPOLLOUT);     // 重置EPOLLONESHOT
