@@ -13,6 +13,9 @@
 
 ## 版本信息
 
+> webserver v8.0
+通过宏定义实现listen_fd和conn_fd自由选择ET或者LT模式
+
 > webserver v7.0
 将定时器的结构由链表优化为小根堆, 增加日志范围选择
 

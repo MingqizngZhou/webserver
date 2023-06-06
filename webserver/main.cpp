@@ -24,12 +24,15 @@
 // #define SYNLOG  //同步写日志
 #define ASYNLOG //异步写日志
 
+#define listenfdET //边缘触发非阻塞
+// #define listenfdLT //水平触发阻塞
+
 static int pipefd[2];           // 管道文件描述符 0为读，1为写
 static HeapTimer m_timer_heap;   // 定时器堆
 static int epoll_fd = 0;
 
 // 添加文件描述符到epoll中 （声明成外部函数）
-extern void addfd(int epoll_fd, int fd, bool one_shot, bool et); 
+extern void addfd(int epoll_fd, int fd, bool one_shot); 
 // 从epoll中删除文件描述符
 extern void rmfd(int epoll_fd, int fd);
 // 在epoll中修改文件描述符
@@ -127,13 +130,13 @@ int main(int argc, char* argv[]){
     epoll_fd = epoll_create(5);     // 参数 5 无意义， > 0 即可
     assert( epoll_fd != -1 );
     // 将监听的文件描述符添加到epoll对象中
-    addfd(epoll_fd, listen_fd, false, false);  // 监听文件描述符不需要 ONESHOT & ET
+    addfd(epoll_fd, listen_fd, false);  // 监听文件描述符不需要 ONESHOT & ET
     
     // 创建管道
     ret = socketpair(PF_UNIX, SOCK_STREAM, 0, pipefd);
     assert( ret != -1 );
     set_nonblocking( pipefd[1] );               // 写管道非阻塞
-    addfd(epoll_fd, pipefd[0], false, false ); // epoll检测读管道
+    addfd(epoll_fd, pipefd[0], false ); // epoll检测读管道
 
     // 设置信号处理函数
     addsig(SIGALRM, sig_to_pipe);   // 定时器信号
@@ -178,6 +181,7 @@ int main(int argc, char* argv[]){
                 // 有客户端连接进来
                 struct sockaddr_in client_addr;
                 socklen_t client_addr_len = sizeof(client_addr);
+#ifdef listenfdLT
                 int conn_fd = accept(listen_fd,(struct sockaddr*)&client_addr, &client_addr_len);
                 // ...判断是否连接成功
                 if (conn_fd == -1) {
@@ -205,7 +209,38 @@ int main(int argc, char* argv[]){
                 timer->cb_func = cb_func;
                 users_timer[conn_fd].timer = timer;
                 m_timer_heap.add(timer, 3 * TIMESLOT);
- 
+#endif
+
+#ifdef listenfdET
+                while (1)
+                {
+                    int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+                   // ...判断是否连接成功
+                    if (conn_fd == -1) {
+                        LOG_ERROR("%s:errno is:%d", "accept error", errno);
+                        break;
+                    }
+
+                    if(http_conn::m_user_cnt >= MAX_FD){
+                        // 目前连接数满了
+                        // ...给客户端写一个信息：服务器内部正忙
+                        close(conn_fd);
+                        break;
+                    }
+                    // 将新客户端数据初始化，放到数组中
+                    users[conn_fd].init(conn_fd, client_addr);  // conn_fd 作为索引
+
+                    // 创建定时器，设置其回调函数与超时时间，然后绑定定时器与用户数据，最后将定时器添加到堆timer_heap中
+                    users_timer[conn_fd].address = client_addr;
+                    users_timer[conn_fd].sockfd = conn_fd;
+                    TimerNode* timer = new TimerNode;
+                    timer->user_data = &users_timer[conn_fd];
+                    timer->cb_func = cb_func;
+                    users_timer[conn_fd].timer = timer;
+                    m_timer_heap.add(timer, 3 * TIMESLOT);
+                }
+                continue;
+#endif
             }   
                 // 读管道有数据，SIGALRM 或 SIGTERM信号触发
             else if(sock_fd == pipefd[0] && (events[i].events & EPOLLIN)){  

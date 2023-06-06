@@ -14,6 +14,12 @@ int http_conn::m_user_cnt = 0;
 int http_conn::m_request_cnt = 0; 
 HeapTimer http_conn::m_timer_heap;
 
+#define connfdET //边缘触发非阻塞
+// #define connfdLT //水平触发阻塞
+
+#define listenfdET //边缘触发非阻塞
+// #define listenfdLT //水平触发阻塞
+
 // locker http_conn::m_timer_lst_locker;
 
 // 网站的根目录
@@ -72,14 +78,31 @@ void set_nonblocking(int fd){
 }
 
 // 添加需要监听的文件描述符到epoll中
-void addfd(int epoll_fd, int fd, bool one_shot, bool et){
+void addfd(int epoll_fd, int fd, bool one_shot){
     epoll_event event;
     event.data.fd = fd;
-    if(et){
-        event.events = EPOLLIN | EPOLLRDHUP | EPOLLET;  // 对所有fd设置边沿触发，但是listen_fd不需要，可以另行判断处理
-    }else{
-        event.events = EPOLLIN | EPOLLRDHUP;    // 默认水平触发    对端连接断开触发的epoll 事件包含 EPOLLIN | EPOLLRDHUP挂起，不用根据返回值判断，直接通过事件判断异常断开
-    }
+    // if(et){
+    //     event.events = EPOLLIN | EPOLLRDHUP | EPOLLET;  // 对所有fd设置边沿触发，但是listen_fd不需要，可以另行判断处理
+    // }else{
+    //     event.events = EPOLLIN | EPOLLRDHUP;    // 默认水平触发    对端连接断开触发的epoll 事件包含 EPOLLIN | EPOLLRDHUP挂起，不用根据返回值判断，直接通过事件判断异常断开
+    // }
+
+    #ifdef connfdET
+    event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+    #endif
+
+    #ifdef connfdLT
+        event.events = EPOLLIN | EPOLLRDHUP;
+    #endif
+
+    #ifdef listenfdET
+        event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+    #endif
+
+    #ifdef listenfdLT
+        event.events = EPOLLIN | EPOLLRDHUP;
+    #endif
+
     if(one_shot){
         event.events |= EPOLLONESHOT;       // 注册为 EPOLLONESHOT事件，防止同一个通信被不同的线程处理
     }
@@ -101,7 +124,16 @@ void rmfd(int epoll_fd, int fd){
 void modfd(int epoll_fd, int fd, int ev){
     epoll_event event;
     event.data.fd = fd;
-    event.events = ev | EPOLLONESHOT | EPOLLRDHUP;
+    // event.events = ev | EPOLLONESHOT | EPOLLRDHUP;
+
+    #ifdef connfdET
+    event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
+    #endif
+
+    #ifdef connfdLT
+        event.events = ev | EPOLLONESHOT | EPOLLRDHUP;
+    #endif
+
     epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &event);
 }
 
@@ -116,7 +148,7 @@ void http_conn::init(int sock_fd, const sockaddr_in& addr){
     setsockopt(sock_fd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
 
     // 添加sock_fd到epoll对象中
-    addfd(m_epoll_fd, sock_fd, true, ET);
+    addfd(m_epoll_fd, sock_fd, true);
     ++m_user_cnt;
 
     char ip[16] = "";
@@ -179,6 +211,20 @@ bool http_conn::read(){
     if(m_rd_idx >= RD_BUF_SIZE) return false;   // 超过缓冲区大小
 
     int bytes_rd = 0;
+
+#ifdef connfdLT
+    bytes_rd = recv(m_sock_fd, m_rd_buf + m_rd_idx, RD_BUF_SIZE - m_rd_idx, 0);
+    m_rd_idx += bytes_rd;
+
+    if (bytes_rd <= 0)
+    {
+        return false;
+    }
+
+    return true;
+#endif
+
+#ifdef connfdET
     while(true){    // m_sock_fd已设置非阻塞
         bytes_rd = recv(m_sock_fd, m_rd_buf + m_rd_idx, RD_BUF_SIZE - m_rd_idx, 0);   // 第二个参数传递的是缓冲区中开始读入的地址偏移
         if(bytes_rd == -1){
@@ -199,6 +245,7 @@ bool http_conn::read(){
     Log::get_instance()->flush();
     
     return true;
+#endif
 }
 
 
