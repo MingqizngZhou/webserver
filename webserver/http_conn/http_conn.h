@@ -124,7 +124,6 @@ private:
     int bytes_have_send;            // 已经发送的字节
     int cgi;                        // 是否启用POST
     char *m_string;                 // 存储请求头数据
-
     
 
 private:

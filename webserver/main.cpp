@@ -358,7 +358,7 @@ int main(int argc, char* argv[]){
                 }
 #endif
 
-// #ifdef Reactor
+#ifdef Reactor
                 pool->append(users + sock_fd, 1);
                 if (timer) {
                     m_timer_heap.adjust(timer, 3 * TIMESLOT);
@@ -374,7 +374,7 @@ int main(int argc, char* argv[]){
                         break;
                     }
                 }
-// #endif
+#endif
             }
         }
         // 最后处理定时事件，因为I/O事件有更高的优先级。当然，这样做将导致定时任务不能精准的按照预定的时间执行。
