@@ -13,6 +13,9 @@
 
 ## 版本信息
 
+> webserver v9.0
+通过宏定义实现自由选择Reactor模型/Proactor模型
+
 > webserver v8.0
 通过宏定义实现listen_fd和conn_fd自由选择ET或者LT模式
 

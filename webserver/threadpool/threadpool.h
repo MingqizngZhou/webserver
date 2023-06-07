@@ -8,6 +8,10 @@
 #include "../locker/locker.h"
 #include "../sql_connection_pool/sql_connection_pool.h"
 
+// 模式选择
+// #define Reactor
+#define Proactor 
+
 // 线程池类，将它定义为模板类是为了代码复用，模板参数T是任务类
 template<typename T>
 class threadpool {
@@ -16,6 +20,7 @@ public:
     threadpool(connection_pool *connPool, int thread_number = 8, int max_requests = 10000);
     ~threadpool();
     bool append(T* request);
+    bool append(T* request, int state);
 
 private:
     /*工作线程运行的函数，它不断从工作队列中取出任务并执行之*/
@@ -82,6 +87,21 @@ threadpool< T >::~threadpool() {
     m_stop = true;
 }
 
+template <typename T>
+bool threadpool<T>::append(T *request, int state) {
+    m_queuelocker.lock();
+    if (m_workqueue.size() >= m_max_requests)
+    {
+        m_queuelocker.unlock();
+        return false;
+    }
+    request->m_state = state;
+    m_workqueue.push_back(request);
+    m_queuelocker.unlock();
+    m_queuestat.post();
+    return true;
+}
+
 template< typename T >
 bool threadpool< T >::append( T* request )
 {
@@ -123,9 +143,33 @@ void threadpool< T >::run() {
         if ( !request ) {
             continue;
         }
+#ifdef Reactor
+        if (0 == request->m_state) {
+            if (request->read()) {
+                request->improv = 1;
+                connectionRAII mysqlcon(&request->mysql, m_connPool);
+                request->process();
+            }
+            else {
+                request->improv = 1;
+                request->timer_flag = 1;
+            }
+        }
+        else {
+            if (request->write()) {
+                request->improv = 1;
+            }
+            else {
+                request->improv = 1;
+                request->timer_flag = 1;
+            }
+        }
+#endif
 
+#ifdef Proactor
         connectionRAII mysqlcon(&request->mysql, m_connPool);
         request->process();
+#endif
     }
 
 }

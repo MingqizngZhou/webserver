@@ -27,6 +27,10 @@
 #define listenfdET //边缘触发非阻塞
 // #define listenfdLT //水平触发阻塞
 
+// 时间处理模型
+// #define Reactor
+#define Proactor  // 模拟Proactor
+
 static int pipefd[2];           // 管道文件描述符 0为读，1为写
 static HeapTimer m_timer_heap;   // 定时器堆
 static int epoll_fd = 0;
@@ -285,6 +289,7 @@ int main(int argc, char* argv[]){
 
                 LOG_DEBUG("-------EPOLLIN-------\n");
                 Log::get_instance()->flush();
+#ifdef Proactor
 
                 if (users[sock_fd].read()){         // 主进程一次性读取缓冲区的所有数据
                     LOG_INFO("deal with the client(%s)", inet_ntoa(users[sock_fd].get_address()->sin_addr));
@@ -304,6 +309,28 @@ int main(int argc, char* argv[]){
                     }
                 }
 
+#endif 
+
+#ifdef Reactor
+                //若监测到读事件，将该事件放入请求队列
+                pool->append(users + sock_fd, 0);
+                if (timer) {
+                        m_timer_heap.adjust(timer, 3 * TIMESLOT);
+                }
+
+                while (true) {
+                    if (1 == users[sock_fd].improv) {
+                        if (1 == users[sock_fd].timer_flag) {
+                            m_timer_heap.del_timer(timer);  // 移除其对应的定时器
+                            delete timer;
+                            users[sock_fd].timer_flag = 0;
+                        }
+                        users[sock_fd].improv = 0;
+                        break;
+                    }
+                }
+                
+#endif
             }
             else if(events[i].events & EPOLLOUT){
                 // EMlog(LOGLEVEL_DEBUG, "-------EPOLLOUT--------\n\n");
@@ -311,6 +338,7 @@ int main(int argc, char* argv[]){
                 Log::get_instance()->flush(); 
 
                 TimerNode* timer = users_timer[sock_fd].timer;
+#ifdef Proactor
                 if (users[sock_fd].write()) {
                     // 主进程一次性写完所有数据
                     LOG_INFO("send data to the client(%s)", inet_ntoa(users[sock_fd].get_address()->sin_addr));
@@ -328,6 +356,25 @@ int main(int argc, char* argv[]){
                         delete timer;
                     }
                 }
+#endif
+
+// #ifdef Reactor
+                pool->append(users + sock_fd, 1);
+                if (timer) {
+                    m_timer_heap.adjust(timer, 3 * TIMESLOT);
+                }
+                while (true) {
+                    if (1 == users[sock_fd].improv) {
+                        if (1 == users[sock_fd].timer_flag) {
+                            m_timer_heap.del_timer(users[sock_fd].timer);  // 移除其对应的定时器 
+                            delete timer;
+                            users[sock_fd].timer_flag = 0;
+                        }
+                        users[sock_fd].improv = 0;
+                        break;
+                    }
+                }
+// #endif
             }
         }
         // 最后处理定时事件，因为I/O事件有更高的优先级。当然，这样做将导致定时任务不能精准的按照预定的时间执行。

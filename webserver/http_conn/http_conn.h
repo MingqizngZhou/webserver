@@ -29,7 +29,6 @@ class TimerNode;
 class HeapTimer;
 
 #define COUT_OPEN 1
-const bool ET = true;
 #define TIMESLOT 5      // 定时器周期：秒
 
 // http 连接的用户数据类
@@ -50,6 +49,9 @@ public:                         // 共享对象，没有线程竞争资源，所
     // util_timer* timer;              // 定时器
     TimerNode * timer;
     MYSQL *mysql;
+    int m_state;  //读为0, 写为1
+    int timer_flag;
+    int improv;
 public:
     // HTTP请求方法，这里只支持GET
     enum METHOD {GET = 0, POST, HEAD, PUT, DELETE, TRACE, OPTIONS, CONNECT};

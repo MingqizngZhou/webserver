@@ -181,6 +181,9 @@ void http_conn::init(){
     bytes_to_send = 0;
 
     cgi = 0;
+    m_state = 0;
+    timer_flag = 0;
+    improv = 0;
 
     bzero(m_rd_buf, RD_BUF_SIZE);           // 清空读缓存
     bzero(m_write_buf, WD_BUF_SIZE);        // 清空写缓存
